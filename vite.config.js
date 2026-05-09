@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  base: './',
+  base: '/MEAL-Pro-Analytics-v18/',
   plugins: [react()],
   build: {
     target: 'es2020',
