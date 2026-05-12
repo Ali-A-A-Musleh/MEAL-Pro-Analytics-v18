@@ -63,9 +63,12 @@ const defaultVisuals = {
   borderRadius: 12,
   showDataLabels: true,
   showAxisLabels: true,
+  showXAxisLabel: true,
+  showYAxisLabel: true,
+  showLegend: true,
   glassBlur: 24,
   glassOpacity: 0.7,
-  chartHeight: 500,
+  chartHeight: 580,
   iconSize: 16,
   iconColor: '#64748b',
   iconOpacity: 1.0
@@ -339,13 +342,23 @@ const App = () => {
       0
     );
 
-    const datasets = rawDatasets.map((dataset, index) => {
-      const palette = [visuals.primaryColor, visuals.secondaryColor, visuals.tertiaryColor, visuals.quaternaryColor];
-      const baseColor = visuals.colorMode === 'single'
-        ? visuals.primaryColor
-        : visuals.colorMode === 'dual'
-        ? index % 2 === 0 ? visuals.primaryColor : visuals.secondaryColor
-        : palette[index % palette.length];
+    const datasets = rawDatasets.map((dataset, datasetIndex) => {
+      const palette = [
+        visuals.primaryColor, 
+        visuals.secondaryColor, 
+        visuals.tertiaryColor, 
+        visuals.quaternaryColor,
+        '#f43f5e', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6'
+      ];
+      
+      let baseColor;
+      if (visuals.colorMode === 'single') {
+        baseColor = visuals.primaryColor;
+      } else if (visuals.colorMode === 'dual') {
+        baseColor = datasetIndex % 2 === 0 ? visuals.primaryColor : visuals.secondaryColor;
+      } else {
+        baseColor = palette[datasetIndex % palette.length];
+      }
 
       const alpha = Math.round(visuals.opacity * 255).toString(16).padStart(2, '0');
       const displayData = config.showPercentage
@@ -699,93 +712,126 @@ const App = () => {
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col gap-4 lg:gap-6 p-3 lg:p-8 relative overflow-x-hidden">
+      <main className="flex-1 flex flex-col gap-4 lg:gap-6 p-4 lg:p-8 relative overflow-x-hidden">
         <ChartHeader 
           chartType={config.chartType} 
           onSetChartType={(type) => setConfig((p) => ({ ...p, chartType: type }))} 
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} 
         />
 
-        <div
-          ref={chartContainerRef}
-          className="resize-container w-full flex rounded-[2rem] lg:rounded-[3rem] p-4 lg:p-8 flex-col items-center justify-center relative overflow-hidden shadow-soft"
-          style={{ 
-            background: `rgba(255,255,255,${visuals.glassOpacity})`,
-            height: `${visuals.chartHeight}px`,
-            minHeight: `${visuals.chartHeight}px`
-          }}
-        >
-          {data.length > 0 ? (
-            <motion.div className="w-full h-full flex flex-col relative" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-              <div ref={stageRef} className="stage-area w-full h-full flex flex-col relative">
-                <div className="chart-container relative w-full h-full min-h-[300px]">
-                  <ChartComponent
-                    key={`${config.chartType}-${config.showTrendline}-${visuals.shadow}-${visuals.showIcons}-${filters.map(f=>f.visible).join('')}`}
-                    ref={chartRef}
-                    data={chartData}
-                    options={chartOptions}
-                    plugins={chartPlugins}
-                  />
-                </div>
-                {visuals.showIcons && aggregatedResults && (
-                  <div
-                    className="grid w-full gap-3 mt-4 justify-items-center"
-                    style={{ gridTemplateColumns: `repeat(${aggregatedResults.labels.length}, minmax(0, 1fr))` }}
-                  >
-                    {aggregatedResults.labels.map((label) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className="rounded-full bg-white p-3 flex items-center justify-center transition-transform hover:scale-110 shadow-sm"
-                        onClick={() => {
-                          setSelectedLabelForIcon(label);
-                          setShowIconModal(true);
-                        }}
-                      >
-                        <DynamicIcon
-                          name={getCategoryIconWithPreference(label)}
-                          size={visuals.iconSize}
-                          style={{ color: visuals.iconColor, opacity: visuals.iconOpacity }}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div className="text-center space-y-6 lg:space-y-8 px-4" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6 }}>
-              <div className="relative">
-                <div className="absolute inset-0 bg-indigo-100 blur-3xl rounded-full opacity-40 animate-pulse" />
-                <SafeIcon name="Layers3" size={60} className="mx-auto text-indigo-400 relative z-10" />
-              </div>
-              <div>
-                <h3 className="text-lg lg:text-2xl font-black text-slate-800 italic tracking-tight">Data Pipeline Ready</h3>
-                <p className="text-slate-400 text-[10px] lg:text-[11px] font-bold leading-relaxed uppercase tracking-[0.2em] mt-2">Please upload a data file to start</p>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Resize Handle */}
-          <div 
-            className="absolute bottom-0 left-0 right-0 h-4 cursor-row-resize flex items-center justify-center group opacity-0 hover:opacity-100 transition-opacity"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              setIsResizing(true);
+        <div className="flex-1 flex flex-col gap-6 min-h-0 overflow-y-auto no-scrollbar pb-10">
+          <motion.div
+            ref={chartContainerRef}
+            className="resize-container w-full flex rounded-[2.5rem] lg:rounded-[3.5rem] p-3 lg:p-6 flex-col items-center justify-center relative shadow-[0_32px_64px_-12px_rgba(15,23,42,0.12)] transition-all duration-500 overflow-visible"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            style={{ 
+              background: `rgba(255,255,255,${visuals.glassOpacity})`,
+              height: `${visuals.chartHeight}px`,
+              minHeight: `${visuals.chartHeight}px`,
+              backdropFilter: `blur(${visuals.glassBlur}px)`,
+              border: '1px solid rgba(255,255,255,0.4)',
             }}
           >
-            <div className="w-12 h-1 rounded-full bg-slate-300 group-hover:bg-indigo-400 transition-colors" />
-          </div>
-        </div>
+            {data.length > 0 ? (
+              <div className="w-full h-full flex flex-col relative" key={fileName}>
+                <div ref={stageRef} className="stage-area w-full h-full flex flex-col relative">
+                  <div className="chart-container relative w-full flex-1 min-h-0">
+                    <ChartComponent
+                      key={`${config.chartType}-${config.showTrendline}-${visuals.shadow}-${visuals.showIcons}-${filters.map(f=>f.visible).join('')}`}
+                      ref={chartRef}
+                      data={chartData}
+                      options={chartOptions}
+                      plugins={chartPlugins}
+                    />
+                  </div>
+                  {visuals.showIcons && aggregatedResults && (
+                    <div 
+                      className={`flex justify-around items-center pt-0.5 pb-0.5 px-[2%] z-10 w-full transition-all duration-300 ${['pie', 'doughnut'].includes(config.chartType) ? 'mt-0.5' : ''}`}
+                    >
+                      {aggregatedResults.labels.map((label, idx) => {
+                        const ratio = visuals.chartHeight / 580;
+                        const dynamicIconSize = Math.max(8, Math.min(visuals.iconSize + 4, (visuals.iconSize + 4) * ratio));
+                        const buttonSizeClass = visuals.chartHeight < 300 ? 'w-5 h-5' : 
+                                               visuals.chartHeight < 400 ? 'w-7 h-7' : 
+                                               visuals.chartHeight < 550 ? 'w-9 h-9' : 'w-10 h-10 lg:w-12 lg:h-12';
+                        
+                        return (
+                          <div key={idx} className="flex-1 flex justify-center">
+                            <motion.button
+                              whileHover={{ scale: 1.15, y: -2 }}
+                              whileTap={{ scale: 0.95 }}
+                              type="button"
+                              initial={{ opacity: 0, y: 5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: idx * 0.03 }}
+                              className={`${buttonSizeClass} bg-white rounded-lg lg:rounded-xl border border-slate-100 shadow-sm flex items-center justify-center transition-all hover:border-indigo-400 hover:shadow-md group relative`}
+                              onClick={() => {
+                                setSelectedLabelForIcon(label);
+                                setShowIconModal(true);
+                              }}
+                              title={`Customize icon for ${label}`}
+                            >
+                              <DynamicIcon
+                                name={getCategoryIconWithPreference(label)}
+                                size={dynamicIconSize}
+                                style={{ 
+                                  color: visuals.iconColor, 
+                                  opacity: visuals.iconOpacity 
+                                }}
+                                className="transition-colors group-hover:text-indigo-600"
+                              />
+                              <div className="absolute -top-0.5 -right-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full border border-white shadow-sm" />
+                              </div>
+                            </motion.button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center space-y-6 lg:space-y-8 px-4 flex flex-col items-center">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-indigo-200 blur-[80px] rounded-full opacity-30 animate-pulse" />
+                  <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl relative z-10 border border-slate-50">
+                    <SafeIcon name="Layers3" size={64} className="text-indigo-500" />
+                  </div>
+                </div>
+                <div className="max-w-xs">
+                  <h3 className="text-xl lg:text-3xl font-black text-slate-800 tracking-tight">Data Intelligence Engine</h3>
+                  <p className="text-slate-400 text-xs font-bold leading-relaxed uppercase tracking-[0.2em] mt-3">Ready for ingestion. Upload CSV or Excel to begin visual synthesis.</p>
+                </div>
+              </div>
+            )}
 
-        {data.length > 0 && (
-          <MetricsGrid metrics={[
-            { label: 'Active Data', value: aggregatedResults ? `${aggregatedResults.filteredCount.toLocaleString()} / ${data.length.toLocaleString()}` : data.length.toLocaleString(), icon: 'Table2', color: 'indigo' },
-            { label: 'Active Variable', value: config.yAxis, icon: 'Target', color: 'emerald' },
-            { label: 'Processing Mode', value: config.aggFunc.toUpperCase(), icon: 'Cpu', color: 'amber' },
-            { label: 'Chart Total', value: config.showPercentage ? '100%' : (aggregatedResults?.rawTotal || 0).toLocaleString(), icon: 'Percent', color: 'rose' }
-          ]} />
-        )}
+            {/* Resize Handle with improved visual - Hidden during export */}
+            <div 
+              data-html2canvas-ignore="true"
+              className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-24 h-6 cursor-row-resize flex items-center justify-center group z-30"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsResizing(true);
+              }}
+            >
+              <div className="w-12 h-1.5 rounded-full bg-slate-200 group-hover:bg-indigo-400 transition-all group-hover:w-16 shadow-inner" />
+            </div>
+          </motion.div>
+
+          {data.length > 0 && (
+            <div className="animate-in slide-in-from-bottom-6 duration-1000">
+              <MetricsGrid metrics={[
+                { label: 'Ingested Samples', value: aggregatedResults ? `${aggregatedResults.filteredCount.toLocaleString()} / ${data.length.toLocaleString()}` : data.length.toLocaleString(), icon: 'Table2', color: 'indigo' },
+                { label: 'Analysis Vector', value: config.yAxis, icon: 'Target', color: 'emerald' },
+                { label: 'Compute Engine', value: config.aggFunc.toUpperCase(), icon: 'Cpu', color: 'amber' },
+                { label: 'Summation Aggregate', value: config.showPercentage ? '100%' : (aggregatedResults?.rawTotal || 0).toLocaleString(), icon: 'BarChart3', color: 'rose' }
+              ]} />
+            </div>
+          )}
+        </div>
       </main>
 
       {showIconModal && (

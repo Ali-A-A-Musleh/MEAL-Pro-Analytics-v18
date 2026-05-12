@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import SafeIcon from './SafeIcon';
 
 const DynamicIcon = ({ name, size = 16, className = '', style = {} }) => {
@@ -14,14 +15,42 @@ const DynamicIcon = ({ name, size = 16, className = '', style = {} }) => {
         } else if (normalized.includes(',')) {
           svgContent = decodeURIComponent(normalized.split(',')[1]);
         }
-        // Apply color by replacing fill and stroke attributes
-        const color = style.color || '#000000';
-        svgContent = svgContent.replace(/(fill|stroke)="[^"]*"/g, `$1="${color}"`);
+        
+        // We use a stable unique ID for each icon instance to strictly scope the style tag
+        const iconId = useMemo(() => `icon-${Math.random().toString(36).slice(2, 11)}`, []);
+        
+        // Remove hardcoded dimensions and any existing style tags to avoid conflicts
+        const svgCleaned = svgContent
+          .replace(/\b(width|height)="[^"]*"/g, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '');
+        
+        // Inject the style scoped to this specific icon ID
+        // and ensure the ID is added to the SVG tag regardless of its attributes
+        const styledSvg = `<style>
+          #${iconId}, #${iconId} * { 
+            fill: inherit !important; 
+            stroke: inherit !important;
+            transition: fill 0.3s ease, stroke 0.3s ease;
+          }
+          #${iconId} [fill="none"], #${iconId} .none, .fill-none { fill: none !important; }
+          #${iconId} [stroke="none"], .stroke-none { stroke: none !important; }
+        </style>${svgCleaned.replace(/<svg([^>]*)>/i, `<svg id="${iconId}" $1>`)}`;
+
         return (
           <div
-            className={className}
-            style={{ width: size, height: size, display: 'inline-block', ...style }}
-            dangerouslySetInnerHTML={{ __html: svgContent }}
+            className={`dynamic-icon-wrapper ${className}`}
+            style={{ 
+              width: size, 
+              height: size, 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              fill: style.color || 'currentColor',
+              stroke: style.color || 'currentColor',
+              color: style.color || 'inherit',
+              ...style 
+            }}
+            dangerouslySetInnerHTML={{ __html: styledSvg }}
           />
         );
       } catch (e) {

@@ -20,14 +20,14 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
       </div>
 
       <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] font-black text-slate-700 uppercase">Color Mode</span>
-          <div className="flex bg-white p-1 rounded-xl border border-slate-200">
+        <div className="flex flex-col gap-3 bg-white/50 p-2 rounded-[2rem] border border-slate-100 shadow-sm">
+          <span className="text-[10px] font-black text-slate-700 uppercase ml-3">Color Mode Selection</span>
+          <div className="flex bg-white p-1 rounded-full border border-slate-200">
             {['single', 'dual', 'multi'].map((mode) => (
               <button
                 key={mode}
                 onClick={() => onSetVisuals({ ...visuals, colorMode: mode })}
-                className={`px-3 py-1 text-[9px] font-black rounded-lg transition-all ${visuals.colorMode === mode ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}
+                className={`px-6 py-2.5 text-[10px] font-black rounded-full transition-all flex-1 whitespace-nowrap ${visuals.colorMode === mode ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 {mode.charAt(0).toUpperCase() + mode.slice(1)}
               </button>
@@ -35,7 +35,7 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
           </div>
         </div>
 
-        <div className="flex gap-2 justify-center py-1 flex-wrap">
+        <div className="grid grid-cols-5 gap-2 py-1">
           {colorPalettes.map((p, i) => (
             <button
               key={i}
@@ -48,26 +48,32 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
                 tertiaryColor: p.t,
                 quaternaryColor: p.q
               })}
-              className="w-6 h-6 rounded-full shadow-sm border-2 border-white hover:scale-110 transition-transform"
-              style={{ background: `linear-gradient(135deg, ${p.p} 0%, ${p.s} 50%, ${p.t} 100%)` }}
+              className="w-full aspect-square rounded-full shadow-sm border-2 border-white hover:scale-110 active:scale-95 transition-all opacity-90 hover:opacity-100"
+              style={{ background: `linear-gradient(135deg, ${p.p} 0%, ${p.s} 50%, ${p.t} 100%, ${p.q} 100%)` }}
               title="Apply palette"
             />
           ))}
         </div>
 
-        <div className="flex justify-around items-center bg-white py-3 rounded-2xl border border-slate-100">
+        <div className="flex justify-around items-center bg-white py-4 rounded-3xl border border-slate-100 shadow-sm">
           {['primaryColor', 'secondaryColor', 'tertiaryColor', 'quaternaryColor'].map((field, index) => {
             if (index >= 2 && visuals.colorMode === 'single') return null;
             if (index === 3 && visuals.colorMode !== 'multi') return null;
             return (
-              <div key={field} className="flex flex-col items-center gap-1.5">
-                <input
-                  type="color"
-                  value={visuals[field]}
-                  onChange={(e) => onSetVisuals({ ...visuals, [field]: e.target.value })}
-                  className="shadow-lg touch-target w-8 h-8 rounded-full border-none cursor-pointer"
-                />
-                <span className="text-[8px] font-black uppercase text-slate-400">{field.replace('Color', '')}</span>
+              <div key={field} className="flex flex-col items-center gap-2">
+                <div className="relative w-10 h-10 group">
+                  <input
+                    type="color"
+                    value={visuals[field]}
+                    onChange={(e) => onSetVisuals({ ...visuals, [field]: e.target.value })}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <div 
+                    className="w-full h-full rounded-full border-2 border-white shadow-md ring-1 ring-slate-200 transition-transform group-hover:scale-110"
+                    style={{ backgroundColor: visuals[field] }}
+                  />
+                </div>
+                <span className="text-[8px] font-black uppercase text-slate-400 tracking-tighter">{field.replace('Color', '')}</span>
               </div>
             );
           })}
@@ -83,17 +89,23 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
             </div>
             <div className="grid grid-cols-2 gap-3">
               {aggregatedResults.labels.map((label) => (
-                <label key={label} className="flex items-center gap-3 bg-slate-50 rounded-2xl p-2 border border-slate-100">
-                  <span className="text-[10px] font-black text-slate-600 truncate flex-1">{label}</span>
-                  <input
-                    type="color"
-                    value={visuals.labelColorMap[label] || visuals.primaryColor}
-                    onChange={(e) => onSetVisuals({
-                      ...visuals,
-                      labelColorMap: { ...visuals.labelColorMap, [label]: e.target.value }
-                    })}
-                    className="w-8 h-8 rounded-xl border border-slate-200 p-0 touch-target cursor-pointer"
-                  />
+                <label key={label} className="flex items-center gap-3 bg-slate-50 rounded-[1.25rem] p-2 border border-slate-100 hover:border-indigo-200 transition-colors">
+                  <span className="text-[10px] font-black text-slate-600 truncate flex-1 ml-1">{label}</span>
+                  <div className="relative w-8 h-8 group shrink-0">
+                    <input
+                      type="color"
+                      value={visuals.labelColorMap[label] || visuals.primaryColor}
+                      onChange={(e) => onSetVisuals({
+                        ...visuals,
+                        labelColorMap: { ...visuals.labelColorMap, [label]: e.target.value }
+                      })}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    />
+                    <div 
+                      className="w-full h-full rounded-full border-2 border-white shadow-sm ring-1 ring-slate-200 transition-transform group-hover:scale-110"
+                      style={{ backgroundColor: visuals.labelColorMap[label] || visuals.primaryColor }}
+                    />
+                  </div>
                 </label>
               ))}
             </div>
@@ -138,7 +150,10 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
           { name: 'grid', icon: 'Grid', label: 'Grid' },
           { name: 'showIcons', icon: 'Smile', label: 'Data Icons' },
           { name: 'showDataLabels', icon: 'Hash', label: 'Values' },
-          { name: 'showTrendline', icon: 'TrendingUp', label: 'Trend Line' }
+          { name: 'showLegend', icon: 'List', label: 'Legend' },
+          { name: 'showTrendline', icon: 'TrendingUp', label: 'Trend Line' },
+          { name: 'showXAxisLabel', icon: 'ArrowRight', label: 'X Axis Label' },
+          { name: 'showYAxisLabel', icon: 'ArrowUp', label: 'Y Axis Label' }
         ].map((item) => (
           <button
             key={item.name}
