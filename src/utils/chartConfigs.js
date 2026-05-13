@@ -336,11 +336,13 @@ export const buildChartOptions = (config, visuals, rawTotal) => {
           y: {
             display: visuals.grid,
             beginAtZero: true,
+            // When showing percentage, force axis bounds to 0..100
+            max: config.showPercentage ? 100 : undefined,
             grid: { color: 'rgba(0,0,0,0.03)', drawBorder: false },
             ticks: { 
-              color: '#64748b', 
+              color: '#64748b',
               font: { family: 'Inter', weight: '600', size: visuals.yAxisFontSize || 11 },
-              callback: (value) => numberFormatter(value),
+              callback: (value) => (config.showPercentage ? `${value}%` : numberFormatter(value)),
               padding: 10
             },
             title: {
