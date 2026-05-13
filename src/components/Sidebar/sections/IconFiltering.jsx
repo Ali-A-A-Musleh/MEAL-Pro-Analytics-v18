@@ -10,6 +10,8 @@ const IconFiltering = ({
   selectedIconName,
   filteredIconSuggestions,
   visuals,
+  iconLibrary,
+  onSetIconLibrary,
   onToggleFilter,
   onShowAll,
   onHideAll,
@@ -49,9 +51,29 @@ const IconFiltering = ({
         </div>
       </div>
 
+      <div className="flex items-center justify-between p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100/50 mb-4">
+        <label className="text-[9px] font-black uppercase tracking-widest text-indigo-400">Library Source</label>
+        <div className="flex gap-1">
+          <button
+            onClick={() => onSetIconLibrary('standard')}
+            title="Standard icons (Lucide)"
+            className={`p-2 rounded-xl transition-all ${iconLibrary === 'standard' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-400 hover:text-slate-600 border border-slate-100'}`}
+          >
+            <SafeIcon name="LayoutGrid" size={14} />
+          </button>
+          <button
+            onClick={() => onSetIconLibrary('humanitarian')}
+            title="Humanitarian icons (OCHA)"
+            className={`p-2 rounded-xl transition-all ${iconLibrary === 'humanitarian' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-400 hover:text-slate-600 border border-slate-100'}`}
+          >
+            <SafeIcon name="Globe" size={14} />
+          </button>
+        </div>
+      </div>
+
       <div className="max-h-[350px] overflow-y-auto space-y-3 pr-2 scrollbar-none">
         {filters.map((item, idx) => (
-          <div key={item.label} className="space-y-3 rounded-[2rem] border border-slate-50 bg-white p-3 hover:bg-slate-50/50 transition-all shadow-sm">
+          <div key={`${item.label}-${idx}`} className="space-y-3 rounded-[2rem] border border-slate-100 bg-white p-3 hover:bg-slate-50/50 transition-all shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -83,25 +105,71 @@ const IconFiltering = ({
 
             {activeIconTarget === item.label && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="space-y-3 rounded-[2rem] border border-slate-100 bg-white p-4 shadow-sm overflow-hidden"
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="mt-3 space-y-4 rounded-[2rem] border border-indigo-100 bg-white p-4 shadow-xl relative z-10"
               >
-                <div className="relative">
-                  <SafeIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" name="Search" size={16} />
-                  <input
-                    type="text"
-                    value={selectedIconName}
-                    onChange={(e) => onSetSelectedIconName(e.target.value)}
-                    className="w-full pr-3 pl-10 py-3 rounded-2xl border border-indigo-100 bg-white text-xs text-slate-700 outline-none focus:ring-2 focus:ring-indigo-200"
-                    placeholder="Search icon name..."
-                  />
+                <div className="flex flex-col gap-3">
+                  <div className="relative group">
+                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400 group-focus-within:text-indigo-600 transition-colors pointer-events-none">
+                      <SafeIcon name="Search" size={14} />
+                    </div>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={selectedIconName}
+                      onChange={(e) => onSetSelectedIconName(e.target.value)}
+                      className="w-full pl-10 pr-20 py-2.5 rounded-xl border border-indigo-50 bg-slate-50/50 text-[11px] font-bold text-slate-700 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-slate-300 shadow-inner-sm"
+                      placeholder={`Find icons...`}
+                    />
+                    
+                    {/* Compact Library Toggle inside search board */}
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center p-0.5 bg-white/80 rounded-lg border border-slate-100 shadow-sm">
+                      <button
+                        onClick={() => onSetIconLibrary('standard')}
+                        title="Standard Icons"
+                        className={`p-1.5 rounded-md transition-all ${iconLibrary === 'standard' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-slate-400'}`}
+                      >
+                        <SafeIcon name="LayoutGrid" size={10} />
+                      </button>
+                      <button
+                        onClick={() => onSetIconLibrary('humanitarian')}
+                        title="Humanitarian Icons"
+                        className={`p-1.5 rounded-md transition-all ${iconLibrary === 'humanitarian' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-slate-400'}`}
+                      >
+                        <SafeIcon name="Globe" size={10} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-2 max-h-[160px] overflow-y-auto pr-1 scrollbar-none">
+                    {filteredIconSuggestions.length > 0 ? (
+                      filteredIconSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion.icon}
+                          type="button"
+                          className={`flex flex-col items-center justify-center rounded-xl aspect-square border-2 transition-all active:scale-90 ${selectedIconName === suggestion.icon ? 'border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm' : 'border-slate-50 bg-white text-slate-400 hover:border-indigo-100 hover:text-indigo-500'}`}
+                          onClick={() => onSetSelectedIconName(suggestion.icon)}
+                        >
+                          <DynamicIcon name={suggestion.icon} size={20} />
+                          <span className="mt-1 text-[6.5px] font-bold uppercase tracking-tighter truncate w-full text-center px-1">
+                            {suggestion.icon.replace('hum:', '').replace('huma-', '')}
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="col-span-4 py-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                         <SafeIcon name="SearchX" size={20} className="mx-auto text-slate-300 mb-1" />
+                         <p className="text-[9px] font-bold text-slate-400">No results found</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="flex items-center justify-center w-full cursor-pointer rounded-2xl border-2 border-dashed border-slate-300 bg-white py-4 text-[11px] font-black text-slate-600 hover:border-indigo-300 transition-all">
-                    <SafeIcon name="UploadCloud" size={18} />
-                    <span className="ml-2">Upload Custom Icon</span>
+                <div className="flex gap-2">
+                  <label className="flex items-center justify-center gap-2 flex-1 cursor-pointer rounded-xl border border-dashed border-indigo-200 bg-slate-50/50 py-2.5 text-[9px] font-black text-indigo-600 hover:bg-white transition-all">
+                    <SafeIcon name="Plus" size={12} />
+                    <span>Upload Logo</span>
                     <input
                       key={`upload-${item.label}`}
                       type="file"
@@ -110,41 +178,25 @@ const IconFiltering = ({
                       onChange={(e) => onUploadIcon(e.target.files?.[0], item.label)}
                     />
                   </label>
-                  <p className="text-[9px] text-slate-500 text-center leading-tight">Supports PNG, JPG, SVG. Use SVG for color customization.</p>
-
-                  <div className="flex flex-wrap items-center gap-2">
+                  
+                  <button
+                    type="button"
+                    onClick={() => onSaveIcon(item.label)}
+                    className="flex-[2] py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 active:translate-y-px transition-all"
+                  >
+                    Confirm Selection
+                  </button>
+                  
+                  {customIcons[item.label.toLowerCase()] && (
                     <button
                       type="button"
-                      onClick={() => onSaveIcon(item.label)}
-                      className="flex-1 py-3 rounded-2xl bg-indigo-600 text-white text-[11px] font-black hover:bg-indigo-700 transition-all"
+                      onClick={() => onResetIcon(item.label)}
+                      title="Reset to default icon"
+                      className="w-10 flex items-center justify-center rounded-xl bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-all"
                     >
-                      Save Icon
+                      <SafeIcon name="RotateCcw" size={14} />
                     </button>
-                    {customIcons[item.label.toLowerCase()] && (
-                      <button
-                        type="button"
-                        onClick={() => onResetIcon(item.label)}
-                        className="flex items-center justify-center gap-2 rounded-2xl bg-rose-500 px-4 py-3 text-[11px] font-black text-white hover:bg-rose-600 transition-all"
-                      >
-                        <SafeIcon name="Trash2" size={16} />
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-5 gap-2 pt-2">
-                  {filteredIconSuggestions.map((suggestion) => (
-                    <button
-                      key={suggestion.icon}
-                      type="button"
-                      className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 p-2 text-slate-600 transition-all hover:border-indigo-300 hover:bg-indigo-50"
-                      onClick={() => onSetSelectedIconName(suggestion.icon)}
-                    >
-                      <SafeIcon name={suggestion.icon} size={18} />
-                      <span className="mt-1 text-[8px] font-black text-slate-500 truncate w-full text-center">{suggestion.icon}</span>
-                    </button>
-                  ))}
+                  )}
                 </div>
               </motion.div>
             )}

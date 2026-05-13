@@ -5,7 +5,7 @@ import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 import SafeIcon from './components/SafeIcon';
 import { parseExcelFile } from './utils/excelParser';
-import { buildChartOptions, chartComponents, colorPalettes, getCategoryIcon, iconMappings } from './utils/chartConfigs';
+import { buildChartOptions, chartComponents, colorPalettes, getCategoryIcon, iconMappings, searchIcons } from './utils/chartConfigs';
 import { useResizeObserver } from './hooks/useResizeObserver';
 
 // Import sub-components
@@ -41,16 +41,19 @@ const defaultConfig = {
   aggFunc: 'sum',
   chartType: 'bar',
   showPercentage: false,
-  chartTitle: 'Interactive Chart',
+  chartTitle: 'Interactive Report',
   xAxisLabel: '',
   yAxisLabel: '',
-  showTrendline: false
+  showTrendline: false,
+  numberFormat: 'raw',
+  iconMode: 'per-category',
+  globalIcon: 'Circle'
 };
 
 const defaultVisuals = {
   colorMode: 'single',
-  primaryColor: '#4f46e5',
-  secondaryColor: '#ec4899',
+  primaryColor: '#6366f1',
+  secondaryColor: '#f43f5e',
   tertiaryColor: '#10b981',
   quaternaryColor: '#f59e0b',
   labelColorMap: {},
@@ -60,7 +63,7 @@ const defaultVisuals = {
   shadow: false,
   grid: true,
   showIcons: true,
-  borderRadius: 12,
+  borderRadius: 16,
   showDataLabels: true,
   showAxisLabels: true,
   showXAxisLabel: true,
@@ -68,10 +71,18 @@ const defaultVisuals = {
   showLegend: true,
   glassBlur: 24,
   glassOpacity: 0.7,
-  chartHeight: 580,
+  chartHeight: 480,
   iconSize: 16,
   iconColor: '#64748b',
-  iconOpacity: 1.0
+  iconOpacity: 1.0,
+  legendFontSize: 12,
+  xAxisFontSize: 11,
+  yAxisFontSize: 11,
+  dataLabelPosition: 'outside',
+  dataLabelColor: '#475569',
+  dataLabelFontSize: 11,
+  xAxisTitleFontSize: 12,
+  yAxisTitleFontSize: 12
 };
 
 const App = () => {
@@ -93,6 +104,7 @@ const App = () => {
   const [showIconModal, setShowIconModal] = useState(false);
   const [selectedLabelForIcon, setSelectedLabelForIcon] = useState('');
   const [selectedIconName, setSelectedIconName] = useState('');
+  const [iconLibrary, setIconLibrary] = useState('standard');
   const [showIconSuggestions, setShowIconSuggestions] = useState(false);
 
   const chartRef = useRef(null);
@@ -267,14 +279,8 @@ const App = () => {
   }, []);
 
   const filteredIconSuggestions = useMemo(() => {
-    const query = selectedIconName.trim().toLowerCase();
-    if (!query) return iconOptions.slice(0, 10);
-    return iconOptions
-      .filter((item) =>
-        item.icon.toLowerCase().includes(query) || item.label.toLowerCase().includes(query)
-      )
-      .slice(0, 10);
-  }, [selectedIconName, iconOptions]);
+    return searchIcons(selectedIconName, iconLibrary);
+  }, [selectedIconName, iconLibrary]);
 
   const aggregatedResults = useMemo(() => {
     if (!data.length || !config.xAxis || !config.yAxis) return null;
@@ -382,8 +388,14 @@ const App = () => {
         return baseColor;
       };
 
-      const backgroundColor = dataset.chartData.map((_, index) => `${resolveColor(index)}${alpha}`);
-      const borderColor = dataset.chartData.map((_, index) => resolveColor(index));
+      const backgroundColor = dataset.chartData.map((_, index) => {
+        const color = resolveColor(index);
+        return config.groupBy ? `${baseColor}${alpha}` : `${color}${alpha}`;
+      });
+      const borderColor = dataset.chartData.map((_, index) => {
+        const color = resolveColor(index);
+        return config.groupBy ? baseColor : color;
+      });
 
       return {
         label: config.groupBy ? dataset.groupName : config.xAxis,
@@ -488,18 +500,20 @@ const App = () => {
       let imageUrl;
       if (visuals.showIcons) {
         // Export with icons using html2canvas
-        const scale = Math.max(3, Math.round(window.devicePixelRatio * 2));
         const canvas = await html2canvas(chartContainerRef.current, {
           backgroundColor: '#ffffff',
-          scale,
+          scale: 3, // Fixed high resolution
           useCORS: true,
-          allowTaint: true,
-          imageTimeout: 0,
+          allowTaint: false,
+          imageTimeout: 15000,
           logging: false,
-          width: chartContainerRef.current.scrollWidth,
-          height: chartContainerRef.current.scrollHeight,
-          windowWidth: window.innerWidth,
-          windowHeight: window.innerHeight
+          onclone: (clonedDoc) => {
+            // Helper to ensure icons are clean in export
+            const icons = clonedDoc.querySelectorAll('svg');
+            icons.forEach(svg => {
+              svg.style.visibility = 'visible';
+            });
+          }
         });
         imageUrl = canvas.toDataURL('image/png', 1.0);
       } else {
@@ -527,18 +541,13 @@ const App = () => {
       let canvas, imageUrl;
       if (visuals.showIcons) {
         // Export with icons using html2canvas
-        const scale = Math.max(3, Math.round(window.devicePixelRatio * 2));
         canvas = await html2canvas(chartContainerRef.current, {
           backgroundColor: '#ffffff',
-          scale,
+          scale: 3,
           useCORS: true,
-          allowTaint: true,
-          imageTimeout: 0,
-          logging: false,
-          width: chartContainerRef.current.scrollWidth,
-          height: chartContainerRef.current.scrollHeight,
-          windowWidth: window.innerWidth,
-          windowHeight: window.innerHeight
+          allowTaint: false,
+          imageTimeout: 15000,
+          logging: false
         });
         imageUrl = canvas.toDataURL('image/png', 1.0);
       } else {
@@ -576,8 +585,8 @@ const App = () => {
 
       <aside className={`sidebar-mobile fixed lg:relative z-20 h-full w-80 glass-panel border-l border-slate-200 shadow-2xl flex flex-col overflow-y-auto lg:translate-x-0 ${sidebarOpen ? 'open' : ''}`}>
         <div className="p-4 lg:p-6 border-b border-slate-100 flex items-center gap-3 bg-white">
-          <div className="bg-indigo-600 p-2.5 rounded-2xl text-white shadow-lg shadow-indigo-100">
-            <SafeIcon name="BarChartBig" size={24} />
+          <div className="bg-white p-1 rounded-xl shadow-md border border-slate-100">
+            <img src="/LOGO.jpg" alt="MEAL Center" className="w-10 h-10 object-contain" />
           </div>
           <div>
             <h1 className="text-lg font-black text-slate-900 leading-tight">MEAL Studio</h1>
@@ -653,6 +662,11 @@ const App = () => {
                 aggregatedResults={aggregatedResults} 
                 onSetVisuals={setVisuals} 
                 onSetConfig={setConfig} 
+                onPickGlobalIcon={() => {
+                  setSelectedLabelForIcon('_global_');
+                  setSelectedIconName(config.globalIcon || '');
+                  setShowIconModal(true);
+                }}
               />
 
               <IconFiltering 
@@ -672,6 +686,8 @@ const App = () => {
                 }} 
                 onSetIsEditingIcons={setIsEditingIcons} 
                 onSetSelectedIconName={setSelectedIconName} 
+                iconLibrary={iconLibrary}
+                onSetIconLibrary={setIconLibrary}
                 onUploadIcon={handleUploadIconImage} 
                 onSaveIcon={(label) => {
                   if (selectedIconName) {
@@ -750,13 +766,39 @@ const App = () => {
                     <div 
                       className={`flex justify-around items-center pt-0.5 pb-0.5 px-[2%] z-10 w-full transition-all duration-300 ${['pie', 'doughnut'].includes(config.chartType) ? 'mt-0.5' : ''}`}
                     >
-                      {aggregatedResults.labels.map((label, idx) => {
+                      {config.iconMode === 'centered' ? (
+                        <div className="flex-1 flex justify-center py-2">
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            className="w-12 h-12 bg-white rounded-2xl border border-slate-100 shadow-md flex items-center justify-center text-indigo-600"
+                            onClick={() => {
+                              setSelectedLabelForIcon('_global_');
+                              setSelectedIconName(config.globalIcon || '');
+                              setShowIconModal(true);
+                            }}
+                          >
+                            <DynamicIcon 
+                              name={config.globalIcon || 'Circle'} 
+                              size={Math.max(20, (visuals.iconSize + 16) * (visuals.chartHeight / 580))} 
+                              style={{ 
+                                color: visuals.iconColor,
+                                opacity: visuals.iconOpacity
+                              }} 
+                            />
+                          </motion.button>
+                        </div>
+                      ) : aggregatedResults.labels.map((label, idx) => {
                         const ratio = visuals.chartHeight / 580;
                         const dynamicIconSize = Math.max(8, Math.min(visuals.iconSize + 4, (visuals.iconSize + 4) * ratio));
                         const buttonSizeClass = visuals.chartHeight < 300 ? 'w-5 h-5' : 
                                                visuals.chartHeight < 400 ? 'w-7 h-7' : 
                                                visuals.chartHeight < 550 ? 'w-9 h-9' : 'w-10 h-10 lg:w-12 lg:h-12';
                         
+                        const iconName = config.iconMode === 'unified' 
+                          ? (config.globalIcon || 'Circle') 
+                          : getCategoryIconWithPreference(label);
+
                         return (
                           <div key={idx} className="flex-1 flex justify-center">
                             <motion.button
@@ -768,13 +810,19 @@ const App = () => {
                               transition={{ delay: idx * 0.03 }}
                               className={`${buttonSizeClass} bg-white rounded-lg lg:rounded-xl border border-slate-100 shadow-sm flex items-center justify-center transition-all hover:border-indigo-400 hover:shadow-md group relative`}
                               onClick={() => {
-                                setSelectedLabelForIcon(label);
+                                if (config.iconMode === 'unified') {
+                                  setSelectedLabelForIcon('_global_');
+                                  setSelectedIconName(config.globalIcon || '');
+                                } else {
+                                  setSelectedLabelForIcon(label);
+                                  setSelectedIconName(iconName);
+                                }
                                 setShowIconModal(true);
                               }}
-                              title={`Customize icon for ${label}`}
+                              title={config.iconMode === 'unified' ? "Customize global icon" : `Customize icon for ${label}`}
                             >
                               <DynamicIcon
-                                name={getCategoryIconWithPreference(label)}
+                                name={iconName}
                                 size={dynamicIconSize}
                                 style={{ 
                                   color: visuals.iconColor, 
@@ -832,6 +880,12 @@ const App = () => {
             </div>
           )}
         </div>
+        
+        <footer className="mt-auto py-8 text-center border-t border-slate-100 bg-white/50">
+          <p className="text-[10px] lg:text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+            Developed by <span className="font-extrabold text-indigo-900 border-b-2 border-indigo-200 pb-0.5">MEAL Center</span>
+          </p>
+        </footer>
       </main>
 
       {showIconModal && (
@@ -883,7 +937,11 @@ const App = () => {
             <div className="flex gap-3">
               <button 
                 onClick={() => { 
-                  setCustomIcons(prev => ({ ...prev, [selectedLabelForIcon.toLowerCase()]: selectedIconName })); 
+                  if (selectedLabelForIcon === '_global_') {
+                    setConfig(prev => ({ ...prev, globalIcon: selectedIconName }));
+                  } else {
+                    setCustomIcons(prev => ({ ...prev, [selectedLabelForIcon.toLowerCase()]: selectedIconName })); 
+                  }
                   setShowIconModal(false); 
                   setSelectedIconName(''); 
                 }} 

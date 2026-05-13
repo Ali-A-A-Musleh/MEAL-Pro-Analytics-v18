@@ -25,14 +25,14 @@ const DynamicIcon = ({ name, size = 16, className = '', style = {} }) => {
           .replace(/<style[\s\S]*?<\/style>/gi, '');
         
         // Inject the style scoped to this specific icon ID
-        // and ensure the ID is added to the SVG tag regardless of its attributes
+        // Note: Using a single style tag for all icons or moving it to a higher level can sometimes help with html2canvas
+        // But for isolation, we keep it here. We'll use a safer selector.
         const styledSvg = `<style>
-          #${iconId}, #${iconId} * { 
+          #${iconId} path, #${iconId} circle, #${iconId} rect, #${iconId} ellipse, #${iconId} polygon, #${iconId} polyline, #${iconId} line { 
             fill: inherit !important; 
             stroke: inherit !important;
-            transition: fill 0.3s ease, stroke 0.3s ease;
           }
-          #${iconId} [fill="none"], #${iconId} .none, .fill-none { fill: none !important; }
+          #${iconId} [fill="none"], .none, .fill-none { fill: none !important; }
           #${iconId} [stroke="none"], .stroke-none { stroke: none !important; }
         </style>${svgCleaned.replace(/<svg([^>]*)>/i, `<svg id="${iconId}" $1>`)}`;
 

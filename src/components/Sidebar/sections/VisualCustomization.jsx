@@ -1,7 +1,8 @@
 import SafeIcon from '../../SafeIcon';
+import DynamicIcon from '../../DynamicIcon';
 import { colorPalettes } from '../../../utils/chartConfigs';
 
-const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals, onSetConfig }) => {
+const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals, onSetConfig, onPickGlobalIcon }) => {
   const palette = [visuals.primaryColor, visuals.secondaryColor, visuals.tertiaryColor, visuals.quaternaryColor];
 
   const handleSliderChange = (name, value) => {
@@ -20,6 +21,113 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
       </div>
 
       <div className="space-y-4">
+        {/* Unified Icon Select when center or unified is chosen */}
+        {['unified', 'centered'].includes(config.iconMode) && visuals.showIcons && (
+          <div className="bg-indigo-50/50 p-4 rounded-[2rem] border border-indigo-100 mb-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black text-indigo-900 uppercase ml-2">Global Icon</span>
+              <button 
+                onClick={() => onSetConfig({...config, iconMode: 'per-category'})}
+                className="text-[9px] font-bold text-indigo-400 hover:text-indigo-600 uppercase"
+              >
+                Reset to Per-Category
+              </button>
+            </div>
+            <div className="mt-3 flex gap-3 items-center">
+              <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center border border-indigo-200 shadow-sm text-indigo-600">
+                <DynamicIcon name={config.globalIcon} size={24} />
+              </div>
+              <button
+                onClick={() => onPickGlobalIcon()}
+                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-full text-[10px] font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all uppercase"
+              >
+                Change Icon
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Number Format Selection */}
+        <div className="flex flex-col gap-3 bg-white/50 p-2 rounded-[2rem] border border-slate-100 shadow-sm">
+          <span className="text-[10px] font-black text-slate-700 uppercase ml-3">Value Formatting</span>
+          <div className="flex bg-white p-1 rounded-full border border-slate-200">
+            {[
+              { id: 'raw', label: 'Raw' },
+              { id: 'compact', label: 'Compact (k/M)' }
+            ].map((fmt) => (
+              <button
+                key={fmt.id}
+                onClick={() => onSetConfig({ ...config, numberFormat: fmt.id })}
+                className={`flex-1 px-4 py-2 text-[10px] font-black rounded-full transition-all ${config.numberFormat === fmt.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                {fmt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Value Label Placement & Color */}
+        <div className="flex flex-col gap-3 bg-white/50 p-2 rounded-[2rem] border border-slate-100 shadow-sm">
+          <div className="flex justify-between items-center px-3">
+            <span className="text-[10px] font-black text-slate-700 uppercase">Value Customization</span>
+            <div className="flex items-center gap-2">
+              <input 
+                type="color" 
+                value={visuals.dataLabelColor} 
+                onChange={(e) => onSetVisuals({ ...visuals, dataLabelColor: e.target.value })}
+                className="w-5 h-5 rounded-full border-0 cursor-pointer overflow-hidden bg-transparent" 
+              />
+              <span className="text-[9px] font-bold text-slate-400">Color</span>
+            </div>
+          </div>
+          
+          <div className="flex bg-white p-1 rounded-full border border-slate-200">
+            {[
+              { id: 'outside', label: 'Outside' },
+              { id: 'inside', label: 'Inside' }
+            ].map((pos) => (
+              <button
+                key={pos.id}
+                onClick={() => onSetVisuals({ ...visuals, dataLabelPosition: pos.id })}
+                className={`flex-1 px-4 py-2 text-[10px] font-black rounded-full transition-all ${visuals.dataLabelPosition === pos.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                {pos.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Icon Mode Selection */}
+        <div className="flex flex-col gap-3 bg-white/50 p-2 rounded-[2rem] border border-slate-100 shadow-sm">
+          <div className="flex justify-between items-center px-3">
+            <span className="text-[10px] font-black text-slate-700 uppercase">Icon Placement</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Show</span>
+              <button
+                onClick={() => onSetVisuals({ ...visuals, showIcons: !visuals.showIcons })}
+                className={`w-8 h-4 rounded-full transition-all relative ${visuals.showIcons ? 'bg-indigo-500' : 'bg-slate-300'}`}
+              >
+                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${visuals.showIcons ? 'left-4.5' : 'left-0.5'}`} />
+              </button>
+            </div>
+          </div>
+          <div className="flex bg-white p-1 rounded-full border border-slate-200 overflow-hidden">
+            {[
+              { id: 'per-category', label: 'Categorical' },
+              { id: 'unified', label: 'Unified' },
+              { id: 'centered', label: 'Centered' }
+            ].map((mode) => (
+              <button
+                key={mode.id}
+                onClick={() => onSetConfig({ ...config, iconMode: mode.id })}
+                className={`flex-1 px-2 py-2 text-[9px] font-black rounded-full transition-all ${config.iconMode === mode.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex flex-col gap-3 bg-white/50 p-2 rounded-[2rem] border border-slate-100 shadow-sm">
           <span className="text-[10px] font-black text-slate-700 uppercase ml-3">Color Mode Selection</span>
           <div className="flex bg-white p-1 rounded-full border border-slate-200">
@@ -120,7 +228,13 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
           { label: 'Fill Opacity', value: visuals.opacity, name: 'opacity', min: 0.1, max: 1, step: 0.05 },
           { label: 'Border Width', value: visuals.borderWidth, name: 'borderWidth', min: 0, max: 8, step: 1 },
           { label: 'Background Blur', value: visuals.glassBlur, name: 'glassBlur', min: 0, max: 48, step: 1 },
-          { label: 'Card Opacity', value: visuals.glassOpacity, name: 'glassOpacity', min: 0.2, max: 1, step: 0.05 }
+          { label: 'Card Opacity', value: visuals.glassOpacity, name: 'glassOpacity', min: 0.2, max: 1, step: 0.05 },
+          { label: 'Legend Font Size', value: visuals.legendFontSize, name: 'legendFontSize', min: 6, max: 24, step: 1 },
+          { label: 'Value Font Size', value: visuals.dataLabelFontSize, name: 'dataLabelFontSize', min: 6, max: 20, step: 1 },
+          { label: 'X Axis Ticks Size', value: visuals.xAxisFontSize, name: 'xAxisFontSize', min: 6, max: 20, step: 1 },
+          { label: 'X Axis Title Size', value: visuals.xAxisTitleFontSize, name: 'xAxisTitleFontSize', min: 6, max: 20, step: 1 },
+          { label: 'Y Axis Ticks Size', value: visuals.yAxisFontSize, name: 'yAxisFontSize', min: 6, max: 20, step: 1 },
+          { label: 'Y Axis Title Size', value: visuals.yAxisTitleFontSize, name: 'yAxisTitleFontSize', min: 6, max: 20, step: 1 }
         ].map((slider) => (
           <div key={slider.name} className="space-y-1.5">
             <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-tight">

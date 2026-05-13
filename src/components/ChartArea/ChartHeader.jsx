@@ -20,8 +20,8 @@ const ChartHeader = ({ chartType, onSetChartType, onToggleSidebar }) => {
         <SafeIcon name="Menu" size={24} className="text-slate-700" />
       </button>
       <div>
-        <h2 className="text-xl lg:text-3xl font-black text-slate-900 tracking-tight">Advanced Analytics Center</h2>
-        <p className="text-slate-500 text-xs lg:text-sm font-medium mt-1">Smart Monitoring and Evaluation System for Humanitarian and Development Projects</p>
+        <h2 className="text-xl lg:text-3xl font-black text-slate-900 tracking-tight">MEAL Center Pro Analytics Studio</h2>
+        <p className="text-slate-500 text-xs lg:text-sm font-medium mt-1">Interactive data visualization tool for monitoring, evaluation, and research</p>
       </div>
 
       <div className="flex bg-white p-1 rounded-full shadow-sm border border-slate-200 overflow-x-auto no-scrollbar max-w-full">

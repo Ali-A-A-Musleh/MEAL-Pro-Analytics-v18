@@ -12,6 +12,7 @@
   "dependencies": {
     "@fontsource/inter": "^4.5.14",
     "@iconify/react": "^6.0.2",
+    "@platyplus/humanitarian-icons": "^0.1.3",
     "chart.js": "^4.4.1",
     "chartjs-plugin-datalabels": "^2.2.0",
     "eslint": "^10.3.0",

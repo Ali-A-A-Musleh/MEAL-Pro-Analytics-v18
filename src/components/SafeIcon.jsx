@@ -3,6 +3,13 @@ import { Icon } from '@iconify/react';
 
 const normalizeIconName = (name) => {
   const raw = String(name || '').trim();
+  
+  // Try Humanitarian Icons first if prefixed
+  if (raw.toLowerCase().startsWith('hum:')) {
+    const humName = raw.slice(4).toLowerCase().replace(/[^a-z0-9]/g, '-');
+    return { type: 'hum', name: `huma-${humName}` };
+  }
+
   const directKey = raw.replace(/[^a-zA-Z0-9]/g, '');
   if (Icons[directKey]) return { type: 'lucide', name: directKey };
 
@@ -20,14 +27,15 @@ const normalizeIconName = (name) => {
 
   // Try Iconify with common prefixes
   const iconifyPrefixes = ['mdi:', 'fa:', 'ion:', 'lucide:', 'heroicons:', 'tabler:', 'feather:'];
-  for (const prefix of iconifyPrefixes) {
-    const iconifyName = prefix + raw.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-    // We'll assume it's valid for now; Iconify handles invalid gracefully
-    return { type: 'iconify', name: iconifyName };
+  
+  // If it already has a prefix, just return it as iconify
+  if (iconifyPrefixes.some(p => raw.toLowerCase().startsWith(p))) {
+    return { type: 'iconify', name: raw.toLowerCase() };
   }
 
-  // Default to Iconify with a fallback
-  return { type: 'iconify', name: 'mdi:circle' };
+  // Otherwise default to mdi prefix for non-lucide icons
+  const iconifyName = 'mdi:' + raw.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  return { type: 'iconify', name: iconifyName };
 };
 
 const SafeIcon = ({ name, size = 16, className = '', style = {} }) => {
@@ -37,6 +45,8 @@ const SafeIcon = ({ name, size = 16, className = '', style = {} }) => {
     return <IconComponent size={size} className={className} style={style} />;
   } else if (normalized.type === 'iconify') {
     return <Icon icon={normalized.name} width={size} height={size} className={className} style={style} />;
+  } else if (normalized.type === 'hum') {
+    return <i className={`${normalized.name} ${className}`} style={{ fontSize: size, ...style }} />;
   }
   return <Icons.Circle size={size} className={className} style={style} />;
 };
