@@ -71,7 +71,7 @@ const defaultVisuals = {
   showLegend: true,
   glassBlur: 24,
   glassOpacity: 0.7,
-  chartHeight: 480,
+  chartHeight: 580,
   iconSize: 16,
   iconColor: '#64748b',
   iconOpacity: 1.0,
