@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-    "scripts": {
+  "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -11,19 +11,8 @@
     "test": "vitest",
     "test:e2e": "playwright test"
   },
-  "devDependencies": {
-    "@testing-library/react": "^14.0.0",
-    "@testing-library/jest-dom": "^6.2.0",
-    "@testing-library/user-event": "^14.5.0",
-    "vitest": "^1.0.0",
-    "playwright": "^1.41.0"
-  },
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint src --ext .jsx,.js"
-  },
   "dependencies": {
+
     "@fontsource/inter": "^4.5.14",
     "@iconify/react": "^6.0.2",
     "@platyplus/humanitarian-icons": "^0.1.3",
