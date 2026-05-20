@@ -3,7 +3,21 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "scripts": {
+    "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext .jsx,.js",
+    "test": "vitest",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/jest-dom": "^6.2.0",
+    "@testing-library/user-event": "^14.5.0",
+    "vitest": "^1.0.0",
+    "playwright": "^1.41.0"
+  },
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -15,6 +29,7 @@
     "@platyplus/humanitarian-icons": "^0.1.3",
     "chart.js": "^4.4.1",
     "chartjs-plugin-datalabels": "^2.2.0",
+    "dompurify": "^3.4.5",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
@@ -30,6 +45,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-react": "^5.0.1",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.35",

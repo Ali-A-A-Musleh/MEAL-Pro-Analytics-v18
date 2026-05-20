@@ -1,3 +1,4 @@
+# SPA Routing for client-side routing on Apache servers (cPanel)
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
@@ -6,4 +7,28 @@
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteCond %{REQUEST_FILENAME} !-l
   RewriteRule . /index.html [L]
+</IfModule>
+
+# Security Hardening HTTP Headers
+<IfModule mod_headers.c>
+  # Clickjacking mitigation - prevent framing of this app on external sites
+  Header always set X-Frame-Options "SAMEORIGIN"
+
+  # MIME Sniffing mitigation - prevent browsers from parsing files dynamically other than specified content-types
+  Header always set X-Content-Type-Options "nosniff"
+
+  # XSS protection - block the page if a reflected XSS attack is detected
+  Header always set X-XSS-Protection "1; mode=block"
+
+  # Referrer policy - protect user privacy during navigation/redirection
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+  # Content Security Policy (CSP)
+  # - default-src 'self': Restrict assets to own origin by default
+  # - script-src 'self' 'unsafe-inline' 'unsafe-eval': Required by Vite/React bundling
+  # - style-src 'self' 'unsafe-inline': Required for dynamic charts and style tags of inline SVGs
+  # - font-src 'self' data:: Required to render local/embedded fonts
+  # - img-src 'self' data: blob: https: http:: Allow loading user images/SVGs and base64 URLs
+  # - connect-src 'self' https://api.iconify.design https://api.unisvg.com https://api.simplesvg.com: Allow dynamic icon downloads
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https: http:; connect-src 'self' https://api.iconify.design https://api.unisvg.com https://api.simplesvg.com; frame-src 'none'; object-src 'none';"
 </IfModule>

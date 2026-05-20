@@ -7,24 +7,29 @@ const ChartHeader = ({ chartType, onSetChartType, onToggleSidebar }) => {
     { id: 'line', icon: 'TrendingUp', label: 'Lines' },
     { id: 'area', icon: 'Mountain', label: 'Areas' },
     { id: 'pie', icon: 'PieChart', label: 'Pie' },
-    { id: 'doughnut', icon: 'Donut', label: 'Doughnut' }
+    { id: 'doughnut', icon: 'Donut', label: 'Doughnut' },
+    { id: 'radar', icon: 'Disc', label: 'Radar' }
   ];
 
   return (
-    <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-      <button
-        type="button"
-        onClick={onToggleSidebar}
-        className="lg:hidden touch-target p-2 rounded-full bg-white shadow-sm border border-slate-200"
-      >
-        <SafeIcon name="Menu" size={24} className="text-slate-700" />
-      </button>
-      <div>
-        <h2 className="text-xl lg:text-3xl font-black text-slate-900 tracking-tight">MEAL Center Pro Analytics Studio</h2>
-        <p className="text-slate-500 text-xs lg:text-sm font-medium mt-1">Interactive data visualization tool for monitoring, evaluation, and research</p>
+    <header className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 relative z-20">
+      <div className="flex items-center gap-4 w-full lg:w-auto">
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          className="lg:hidden touch-target p-2 rounded-full glass-panel shadow-sm border border-slate-200 hover:scale-105 active:scale-95 transition-transform"
+        >
+          <SafeIcon name="Menu" size={24} className="text-slate-700" />
+        </button>
+        <div>
+          <h2 className="text-xl lg:text-3xl font-black text-slate-900 tracking-tight">
+            MEAL Center Pro Analytics Studio
+          </h2>
+          <p className="text-slate-500 text-xs lg:text-sm font-medium mt-1">Interactive data visualization tool for monitoring, evaluation, and research</p>
+        </div>
       </div>
 
-      <div className="flex bg-white p-1 rounded-full shadow-sm border border-slate-200 overflow-x-auto no-scrollbar max-w-full">
+      <div className="flex glass-panel p-1.5 rounded-full shadow-lg border border-slate-200/50 overflow-x-auto no-scrollbar max-w-full">
         {chartTypes.map((item) => (
           <button
             key={item.id}

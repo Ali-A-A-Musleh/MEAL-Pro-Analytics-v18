@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { useState } from 'react';
 import SafeIcon from '../../SafeIcon';
 import DynamicIcon from '../../DynamicIcon';
 
@@ -11,6 +11,8 @@ const IconFiltering = ({
   filteredIconSuggestions,
   visuals,
   iconLibrary,
+  legendAliases,
+  onSaveAlias,
   onSetIconLibrary,
   onToggleFilter,
   onShowAll,
@@ -24,221 +26,214 @@ const IconFiltering = ({
   onSetVisuals,
   getCategoryIconWithPreference
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingLabel, setEditingLabel] = useState(null);
+  const [editValue, setEditValue] = useState('');
+
+  // Filter active categories based on search input
+  const filteredCategories = filters.filter(item => 
+    (item.label || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (legendAliases?.[item.label] || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const startEditing = (label) => {
+    setEditingLabel(label);
+    setEditValue(legendAliases?.[label] || label);
+  };
+
+  const handleSaveAlias = (original) => {
+    if (onSaveAlias && editValue.trim()) {
+      onSaveAlias(original, editValue.trim());
+    }
+    setEditingLabel(null);
+  };
+
   return (
-    <section id="icon-control-panel" className="bg-white p-4 lg:p-5 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2">
+    <section id="icon-control-panel" className="bg-white p-4 lg:p-6 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-5">
+      {/* Header Info */}
+      {/* Header Info */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <h3 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
             <SafeIcon name="Target" size={12} /> Icon Customization & Filtering
           </h3>
-          <p className="text-[10px] text-slate-500">Control category visibility and choose custom icons for each data point.</p>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onShowAll}
+              className="text-[10px] font-black rounded-2xl border border-slate-200 bg-indigo-50 text-indigo-700 px-3 py-2 hover:bg-indigo-100 transition-all uppercase"
+            >
+              Show All
+            </button>
+            <button
+              type="button"
+              onClick={onHideAll}
+              className="text-[10px] font-black rounded-2xl border border-slate-200 bg-white text-slate-700 px-3 py-2 hover:bg-slate-50 transition-all uppercase"
+            >
+              Hide All
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onShowAll}
-            className="text-[10px] font-black rounded-2xl border border-slate-200 bg-indigo-50 text-indigo-700 px-3 py-2 hover:bg-indigo-100 transition-all"
-          >
-            Show All
-          </button>
-          <button
-            type="button"
-            onClick={onHideAll}
-            className="text-[10px] font-black rounded-2xl border border-slate-200 bg-white text-slate-700 px-3 py-2 hover:bg-slate-50 transition-all"
-          >
-            Hide All
-          </button>
-        </div>
+        <p className="text-[10px] text-slate-500">Control category visibility and choose custom icons for each data point.</p>
       </div>
 
-      <div className="flex items-center justify-between p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100/50 mb-4">
-        <label className="text-[9px] font-black uppercase tracking-widest text-indigo-400">Library Source</label>
-        <div className="flex gap-1">
-          <button
-            onClick={() => onSetIconLibrary('standard')}
-            title="Standard icons (Lucide)"
-            className={`p-2 rounded-xl transition-all ${iconLibrary === 'standard' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-400 hover:text-slate-600 border border-slate-100'}`}
-          >
-            <SafeIcon name="LayoutGrid" size={14} />
-          </button>
-          <button
-            onClick={() => onSetIconLibrary('humanitarian')}
-            title="Humanitarian icons (OCHA)"
-            className={`p-2 rounded-xl transition-all ${iconLibrary === 'humanitarian' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-400 hover:text-slate-600 border border-slate-100'}`}
-          >
-            <SafeIcon name="Globe" size={14} />
-          </button>
-        </div>
+      {/* Icon Library Selector */}
+      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/50 w-fit">
+        <button
+          onClick={() => onSetIconLibrary('standard')}
+          title="Standard Icons (Lucide)"
+          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 ${iconLibrary === 'standard' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          <SafeIcon name="LayoutGrid" size={10} /> Lucide
+        </button>
+        <button
+          onClick={() => onSetIconLibrary('humanitarian')}
+          title="Humanitarian Icons (OCHA)"
+          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-1 ${iconLibrary === 'humanitarian' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          <SafeIcon name="Globe" size={10} /> OCHA
+        </button>
       </div>
 
-      <div className="max-h-[350px] overflow-y-auto space-y-3 pr-2 scrollbar-none">
-        {filters.map((item, idx) => (
-          <div key={`${item.label}-${idx}`} className="space-y-3 rounded-[2rem] border border-slate-100 bg-white p-3 hover:bg-slate-50/50 transition-all shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={item.visible}
-                  onChange={() => onToggleFilter(item.label)}
-                  className="sr-only"
-                />
-                <div className={`flex items-center justify-center w-7 h-7 rounded-2xl border transition-all ${item.visible ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-400'}`}>
-                  <SafeIcon name="CheckCircle2" size={16} />
-                </div>
-                <span className="text-[10px] font-black text-slate-700 truncate max-w-[120px]">
-                  {item.label || <span className="italic text-slate-400">Empty Label</span>}
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={() => onSetActiveIconTarget(item.label === activeIconTarget ? '' : item.label)}
-                className={`flex items-center gap-2 rounded-2xl border px-3 py-2 text-[10px] font-black transition-all ${activeIconTarget === item.label ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-indigo-50'}`}
+      {/* Search Input for Sidebar Categories */}
+      <div className="relative">
+        <SafeIcon name="Search" size={12} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          placeholder="Search active categories..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-100 bg-slate-50/50 text-[10px] font-bold outline-none focus:ring-2 focus:ring-indigo-100"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            <SafeIcon name="X" size={10} />
+          </button>
+        )}
+      </div>
+
+      {/* Categories List */}
+      <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1 sidebar-scroll">
+        {filteredCategories.length > 0 ? (
+          filteredCategories.map((item, idx) => {
+            const iconName = getCategoryIconWithPreference(item.label);
+            const isCustomized = !!customIcons[String(item.label).toLowerCase()];
+            const displayName = legendAliases?.[item.label] || item.label || `Category ${idx + 1}`;
+
+            return (
+              <div 
+                key={`${idx}-${item.label || 'cat'}`}
+                className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all duration-300 ${item.visible ? 'bg-white border-slate-100 hover:border-indigo-100 shadow-sm' : 'bg-slate-50/70 border-slate-100 opacity-60'}`}
               >
-                <DynamicIcon 
-                  name={getCategoryIconWithPreference(item.label)} 
-                  size={14} 
-                  style={{ color: activeIconTarget === item.label ? '#ffffff' : visuals.iconColor }}
-                />
-                Change
-              </button>
-            </div>
-
-            {activeIconTarget === item.label && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                className="mt-3 space-y-4 rounded-[2rem] border border-indigo-100 bg-white p-4 shadow-xl relative z-10"
-              >
-                <div className="flex flex-col gap-3">
-                  <div className="relative group">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400 group-focus-within:text-indigo-600 transition-colors pointer-events-none">
-                      <SafeIcon name="Search" size={14} />
-                    </div>
-                    <input
-                      type="text"
-                      autoFocus
-                      value={selectedIconName}
-                      onChange={(e) => onSetSelectedIconName(e.target.value)}
-                      className="w-full pl-10 pr-20 py-2.5 rounded-xl border border-indigo-50 bg-slate-50/50 text-[11px] font-bold text-slate-700 outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-slate-300 shadow-inner-sm"
-                      placeholder={`Find icons...`}
-                    />
-                    
-                    {/* Compact Library Toggle inside search board */}
-                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center p-0.5 bg-white/80 rounded-lg border border-slate-100 shadow-sm">
-                      <button
-                        onClick={() => onSetIconLibrary('standard')}
-                        title="Standard Icons"
-                        className={`p-1.5 rounded-md transition-all ${iconLibrary === 'standard' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-slate-400'}`}
-                      >
-                        <SafeIcon name="LayoutGrid" size={10} />
-                      </button>
-                      <button
-                        onClick={() => onSetIconLibrary('humanitarian')}
-                        title="Humanitarian Icons"
-                        className={`p-1.5 rounded-md transition-all ${iconLibrary === 'humanitarian' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-slate-400'}`}
-                      >
-                        <SafeIcon name="Globe" size={10} />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-2 max-h-[160px] overflow-y-auto pr-1 scrollbar-none">
-                    {filteredIconSuggestions.length > 0 ? (
-                      filteredIconSuggestions.map((suggestion) => (
-                        <button
-                          key={suggestion.icon}
-                          type="button"
-                          className={`flex flex-col items-center justify-center rounded-xl aspect-square border-2 transition-all active:scale-90 ${selectedIconName === suggestion.icon ? 'border-indigo-500 bg-indigo-50 text-indigo-600 shadow-sm' : 'border-slate-50 bg-white text-slate-400 hover:border-indigo-100 hover:text-indigo-500'}`}
-                          onClick={() => onSetSelectedIconName(suggestion.icon)}
-                        >
-                          <DynamicIcon name={suggestion.icon} size={20} />
-                          <span className="mt-1 text-[6.5px] font-bold uppercase tracking-tighter truncate w-full text-center px-1">
-                            {suggestion.icon.replace('hum:', '').replace('huma-', '')}
-                          </span>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="col-span-4 py-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                         <SafeIcon name="SearchX" size={20} className="mx-auto text-slate-300 mb-1" />
-                         <p className="text-[9px] font-bold text-slate-400">No results found</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <label className="flex items-center justify-center gap-2 flex-1 cursor-pointer rounded-xl border border-dashed border-indigo-200 bg-slate-50/50 py-2.5 text-[9px] font-black text-indigo-600 hover:bg-white transition-all">
-                    <SafeIcon name="Plus" size={12} />
-                    <span>Upload Logo</span>
-                    <input
-                      key={`upload-${item.label}`}
-                      type="file"
-                      accept="image/png, image/jpeg, image/svg+xml"
-                      className="hidden"
-                      onChange={(e) => onUploadIcon(e.target.files?.[0], item.label)}
-                    />
-                  </label>
-                  
+                {/* Left side: Icon bubble and text */}
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {/* Icon Customizer Trigger Bubble */}
                   <button
                     type="button"
-                    onClick={() => onSaveIcon(item.label)}
-                    className="flex-[2] py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 active:translate-y-px transition-all"
+                    onClick={() => {
+                      const label = item.label || `category-${idx}`;
+                      onSetActiveIconTarget(label);
+                      onSetSelectedIconName(iconName);
+                      onSetIsEditingIcons(true);
+                    }}
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center border-2 transition-transform hover:scale-105 active:scale-95 shrink-0 ${item.visible ? 'bg-indigo-50/60 border-indigo-200 text-indigo-600' : 'bg-slate-100 border-slate-200 text-slate-400'}`}
+                    title="Click to customize category icon"
                   >
-                    Confirm Selection
+                    <DynamicIcon 
+                      name={iconName} 
+                      size={18} 
+                      style={{ color: item.visible ? visuals.iconColor : undefined }}
+                    />
                   </button>
-                  
-                  {customIcons[item.label.toLowerCase()] && (
+
+                  {/* Category Name Label (with double-click inline editor) */}
+                  <div className="flex-1 min-w-0 pr-2">
+                    {editingLabel === item.label ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={() => handleSaveAlias(item.label)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSaveAlias(item.label)}
+                        className="w-full bg-slate-50 border border-indigo-200 rounded px-1.5 py-0.5 text-[10px] font-black text-slate-800 outline-none"
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1.5 group">
+                        <span 
+                          onDoubleClick={() => startEditing(item.label)}
+                          className="text-[10px] font-black text-slate-700 truncate block cursor-pointer hover:text-indigo-600 transition-colors uppercase tracking-tight"
+                          title="Double click to edit category name"
+                        >
+                          {displayName}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => startEditing(item.label)}
+                          className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition-opacity shrink-0"
+                          title="Edit Category Name"
+                        >
+                          <SafeIcon name="Pencil" size={8} />
+                        </button>
+                      </div>
+                    )}
+                    <span className="text-[7.5px] text-slate-400 uppercase tracking-widest font-black block mt-0.5">
+                      {isCustomized ? 'Custom Tag' : 'Default Mapping'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right side: Action controls */}
+                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  {/* Single Reset Button (visible only if customized) */}
+                  {isCustomized && (
                     <button
                       type="button"
                       onClick={() => onResetIcon(item.label)}
-                      title="Reset to default icon"
-                      className="w-10 flex items-center justify-center rounded-xl bg-slate-100 text-slate-400 hover:bg-rose-500 hover:text-white transition-all"
+                      className="p-1.5 bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg border border-slate-100 transition-all shadow-sm active:scale-90"
+                      title="Reset icon to default"
                     >
-                      <SafeIcon name="RotateCcw" size={14} />
+                      <SafeIcon name="RotateCcw" size={10} />
                     </button>
                   )}
-                </div>
-              </motion.div>
-            )}
-          </div>
-        ))}
-      </div>
 
-      <div className="space-y-4 pt-4 border-t border-slate-50">
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] font-black text-indigo-700 uppercase">Icon Color</span>
-          <input
-            type="color"
-            value={visuals.iconColor}
-            onChange={(e) => onSetVisuals({ ...visuals, iconColor: e.target.value })}
-            className="w-8 h-8 rounded-full border-2 border-white shadow-lg cursor-pointer"
-          />
-        </div>
-        
-        <div className="space-y-4">
-          {[
-            { label: 'Icon Size', value: visuals.iconSize, name: 'iconSize', min: 12, max: 48, step: 2, unit: 'px' },
-            { label: 'Icon Opacity', value: visuals.iconOpacity, name: 'iconOpacity', min: 0.1, max: 1, step: 0.05, unit: '%' }
-          ].map((slider) => (
-            <div key={slider.name} className="space-y-1.5">
-              <div className="flex justify-between text-[10px] font-black text-indigo-600 uppercase tracking-tight">
-                <span>{slider.label}</span>
-                <span className="text-indigo-800">
-                  {slider.name === 'iconOpacity' ? `${Math.round(slider.value * 100)}%` : `${slider.value}px`}
-                </span>
+                  {/* Edit Icon Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const label = item.label || `category-${idx}`;
+                      onSetActiveIconTarget(label);
+                      onSetSelectedIconName(iconName);
+                      onSetIsEditingIcons(true);
+                    }}
+                    className="p-1.5 bg-slate-50 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded-lg border border-slate-100 transition-all shadow-sm active:scale-90"
+                    title="Change icon"
+                  >
+                    <SafeIcon name="Palette" size={10} />
+                  </button>
+
+                  {/* Toggle Eye/EyeOff Button */}
+                  <button
+                    type="button"
+                    onClick={() => onToggleFilter(item.label)}
+                    className={`p-1.5 rounded-lg border transition-all shadow-sm active:scale-90 ${item.visible ? 'bg-indigo-50/50 border-indigo-100 text-indigo-600 hover:bg-indigo-100/50' : 'bg-slate-100 border-slate-200 text-slate-400 hover:bg-slate-200'}`}
+                    title={item.visible ? 'Hide from Chart' : 'Show on Chart'}
+                  >
+                    <SafeIcon name={item.visible ? 'Eye' : 'EyeOff'} size={10} />
+                  </button>
+                </div>
               </div>
-              <input
-                type="range"
-                min={slider.min}
-                max={slider.max}
-                step={slider.step}
-                value={slider.value}
-                onChange={(e) => onSetVisuals({ ...visuals, [slider.name]: parseFloat(e.target.value) })}
-                className="w-full accent-indigo-600 h-1.5 bg-white rounded-lg appearance-none cursor-pointer border border-indigo-200"
-              />
-            </div>
-          ))}
-        </div>
+            );
+          })
+        ) : (
+          <div className="py-8 text-center bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-100">
+            <SafeIcon name="SearchX" size={24} className="mx-auto text-slate-300 mb-2 opacity-50" />
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">No matching categories</p>
+          </div>
+        )}
       </div>
     </section>
   );

@@ -9,6 +9,8 @@ import {
   LineElement,
   PointElement,
   ArcElement,
+  RadarController,
+  RadialLinearScale,
   Tooltip,
   Legend,
   Title,
@@ -18,10 +20,12 @@ import {
 ChartJS.register(
   CategoryScale,
   LinearScale,
+  RadialLinearScale,
   BarElement,
   LineElement,
   PointElement,
   ArcElement,
+  RadarController,
   Tooltip,
   Legend,
   Title,
@@ -34,7 +38,9 @@ export const chartComponents = {
   line: 'line',
   area: 'line',
   pie: 'pie',
-  doughnut: 'doughnut'
+  doughnut: 'doughnut',
+  radar: 'radar',
+  Radar: RadarController
 };
 
 export const colorPalettes = [
@@ -142,13 +148,13 @@ export const searchIcons = (query, library = 'standard') => {
 
   const results = targetFuse.search(query);
   const uniqueIcons = new Map();
-  
+
   results.forEach(r => {
     if (!uniqueIcons.has(r.item.icon)) {
       uniqueIcons.set(r.item.icon, { icon: r.item.icon, label: r.item.label });
     }
   });
-  
+
   return Array.from(uniqueIcons.values());
 };
 
@@ -185,61 +191,79 @@ export const getSemanticIcon = (label) => {
   return getCategoryIcon(label);
 };
 
-export const buildChartOptions = (config, visuals, rawTotal) => {
+export const buildChartOptions = (config, visuals, rawTotal, labels = [], filters = []) => {
+  const scalingRatio = Math.max(0.4, visuals.chartHeight / 600);
+
+  const isHorizontalMode = ['bar', 'line', 'area'].includes(config.chartType) &&
+    visuals.chartOrientation === 'h';
+
   const numberFormatter = (value) => {
+    const num = Number(value);
+    if (Number.isNaN(num)) return value;
     if (config.numberFormat === 'compact') {
       return new Intl.NumberFormat('en-US', {
         notation: 'compact',
         maximumFractionDigits: 1
-      }).format(value);
+      }).format(num);
     }
-    return new Intl.NumberFormat('en-US').format(value);
+    return new Intl.NumberFormat('en-US').format(num);
   };
 
   return {
     responsive: true,
+    devicePixelRatio: 2, // High resolution override
+    indexAxis: isHorizontalMode ? 'y' : 'x',
     maintainAspectRatio: false,
     layout: {
       padding: {
-        top: ['pie', 'doughnut'].includes(config.chartType) 
-          ? (config.chartTitle ? (visuals.showLegend ? 60 : 30) : (visuals.showLegend ? 50 : 20))
-          : (config.chartTitle ? (visuals.showLegend ? 40 : 20) : (visuals.showLegend ? 30 : 10)),
-        bottom: visuals.showIcons ? 15 : 5,
-        left: 10,
-        right: 10
+        top: (visuals.legendPosition === 'top' ? (5 + (visuals.legendSpacing || 0)) * scalingRatio : 0) + 10 * scalingRatio,
+        bottom: (visuals.legendPosition === 'bottom' ? (5 + (visuals.legendSpacing || 0)) * scalingRatio : (visuals.showIcons ? 10 * scalingRatio : 15 * scalingRatio)) + 10 * scalingRatio,
+        left: (visuals.legendPosition === 'left' ? (5 + (visuals.legendSpacing || 0)) * scalingRatio : (isHorizontalMode && visuals.showIcons ? 65 * scalingRatio : (isHorizontalMode ? 25 : 45))) + 10 * scalingRatio,
+        right: (visuals.legendPosition === 'right' ? (5 + (visuals.legendSpacing || 0)) * scalingRatio : 30 * scalingRatio) + 10 * scalingRatio
       }
     },
     animation: {
-      duration: 800,
+      duration: 350,
       easing: 'easeOutQuart'
     },
     plugins: {
       title: {
-        display: Boolean(config.chartTitle),
+        display: false,
         text: config.chartTitle,
-        color: '#0f172a',
-        font: { family: 'Inter', size: 18, weight: '800' },
-        padding: { top: 10, bottom: 20 }
+        color: '#1e293b',
+        font: { family: 'Inter', size: 20 * scalingRatio, weight: '800' },
+        padding: { top: 15, bottom: 5 }
       },
       legend: {
         display: visuals.showLegend,
-        position: 'top',
+        position: visuals.legendPosition || 'top',
         align: 'center',
+        fullSize: true,
+        maxHeight: (visuals.legendPosition === 'top' || visuals.legendPosition === 'bottom') ? 120 * scalingRatio : undefined,
+        maxWidth: (visuals.legendPosition === 'left' || visuals.legendPosition === 'right') ? (visuals.legendWidth || 180) : undefined,
+        padding: 40 * scalingRatio,
         labels: {
-          font: { family: 'Inter', size: visuals.legendFontSize || 12, weight: 'bold' },
+          font: { family: 'Inter', size: (visuals.legendFontSize || 12) * scalingRatio, weight: '800' },
           usePointStyle: true,
-          padding: 24,
+          pointStyleWidth: 12 * scalingRatio,
+          padding: ((visuals.legendPosition === 'left' || visuals.legendPosition === 'right') ? 12 : 20) * scalingRatio,
+          color: '#334155',
+          boxWidth: 10 * scalingRatio,
           generateLabels: (chart) => {
             const datasets = chart.data.datasets;
             const labels = chart.data.labels;
-            
-            // If grouped, show datasets as legend items
+            const charLimit = visuals.labelMaxLength || 40;
+
             if (config.groupBy) {
               return datasets.map((dataset, index) => {
                 const bgColor = Array.isArray(dataset.backgroundColor) ? dataset.backgroundColor[0] : dataset.backgroundColor;
                 const bColor = Array.isArray(dataset.borderColor) ? dataset.borderColor[0] : dataset.borderColor;
+                let text = dataset.label;
+                if (text.length > charLimit) {
+                  text = text.slice(0, Math.max(3, charLimit - 3)) + '...';
+                }
                 return {
-                  text: dataset.label,
+                  text,
                   fillStyle: bgColor,
                   strokeStyle: bColor || bgColor,
                   lineWidth: 1,
@@ -249,36 +273,33 @@ export const buildChartOptions = (config, visuals, rawTotal) => {
                 };
               });
             }
-            
-            // If no Group By is used but color mode is not 'single', generate individual legend items for each bar/category
-            if (datasets.length > 0 && visuals.colorMode !== 'single') {
+
+            if (datasets.length > 0 && !config.groupBy) {
               return labels.map((label, i) => {
                 const dataset = datasets[0];
                 const bgColor = Array.isArray(dataset.backgroundColor) ? dataset.backgroundColor[i] : dataset.backgroundColor;
                 const bColor = Array.isArray(dataset.borderColor) ? dataset.borderColor[i] : dataset.borderColor;
+                let text = String(label);
+                if (text.length > charLimit) {
+                  text = text.slice(0, Math.max(3, charLimit - 3)) + '...';
+                }
+                const originalLabel = dataset.originalLabels?.[i];
+                const filterItem = originalLabel ? filters.find(f => f.label === originalLabel) : null;
+                const isHidden = filterItem ? filterItem.visible === false : false;
                 return {
-                  text: String(label),
+                  text,
                   fillStyle: bgColor,
                   strokeStyle: bColor,
                   lineWidth: dataset.borderWidth,
-                  hidden: !chart.isDatasetVisible(0),
+                  hidden: isHidden,
                   index: i,
                   datasetIndex: 0,
                   pointStyle: 'circle'
                 };
               });
             }
-            
-            // Default legend behavior
-            return datasets.map((dataset, index) => ({
-              text: dataset.label,
-              fillStyle: dataset.backgroundColor,
-              strokeStyle: dataset.backgroundColor,
-              lineWidth: 0,
-              hidden: !chart.isDatasetVisible(index),
-              datasetIndex: index,
-              pointStyle: 'circle'
-            }));
+
+            return [];
           }
         }
       },
@@ -288,10 +309,10 @@ export const buildChartOptions = (config, visuals, rawTotal) => {
         bodyColor: '#475569',
         borderColor: '#e2e8f0',
         borderWidth: 1,
-        titleFont: { family: 'Inter', size: 13, weight: 'bold' },
-        bodyFont: { family: 'Inter', size: 12, weight: 'bold' },
-        padding: 12,
-        cornerRadius: 12,
+        titleFont: { family: 'Inter', size: 13 * scalingRatio, weight: 'bold' },
+        bodyFont: { family: 'Inter', size: 12 * scalingRatio, weight: 'bold' },
+        padding: 12 * scalingRatio,
+        cornerRadius: 12 * scalingRatio,
         callbacks: {
           title: (items) => items?.[0]?.label || '',
           label: (context) => {
@@ -299,7 +320,7 @@ export const buildChartOptions = (config, visuals, rawTotal) => {
             const xIndex = context.dataIndex;
             const rawValue = dataset.rawData?.[xIndex] ?? Number(context.raw);
             const labelPrefix = config.groupBy ? `${dataset.label}: ` : '';
-            
+
             if (config.showPercentage) {
               const percent = rawTotal === 0 ? 0 : ((Number(rawValue) / rawTotal) * 100).toFixed(1);
               return ` ${labelPrefix}${percent}% (${numberFormatter(Number(rawValue))})`;
@@ -312,10 +333,10 @@ export const buildChartOptions = (config, visuals, rawTotal) => {
         display: visuals.showDataLabels ? 'auto' : false,
         anchor: visuals.dataLabelPosition === 'inside' ? 'center' : 'end',
         align: visuals.dataLabelPosition === 'inside' ? 'center' : 'end',
-        offset: visuals.dataLabelPosition === 'inside' ? 0 : 12,
-        font: { family: 'Inter', weight: 'bold', size: visuals.dataLabelFontSize || 11 },
+        offset: (visuals.dataLabelPosition === 'inside' ? 0 : 12) * scalingRatio,
+        font: { family: 'Inter', weight: 'bold', size: (visuals.dataLabelFontSize || 11) * scalingRatio },
         color: visuals.dataLabelColor || (visuals.dataLabelPosition === 'inside' ? '#ffffff' : '#475569'),
-        padding: 4,
+        padding: 4 * scalingRatio,
         formatter: (value, context) => {
           const rawValue = context.dataset.rawData?.[context.dataIndex] ?? Number(value);
           const percentage = rawTotal === 0 ? 0 : (Number(rawValue) / rawTotal) * 100;
@@ -326,47 +347,144 @@ export const buildChartOptions = (config, visuals, rawTotal) => {
           if (config.showPercentage) {
             return `${percentage.toFixed(1)}%`;
           }
-          return numberFormatter(value);
+          return numberFormatter(rawValue);
         }
       }
     },
     scales: ['pie', 'doughnut'].includes(config.chartType)
       ? {}
-      : {
+      : config.chartType === 'radar'
+        ? {
+          r: {
+            grid: { color: 'rgba(0,0,0,0.05)' },
+            angleLines: { color: 'rgba(0,0,0,0.05)' },
+            pointLabels: {
+              font: { family: 'Inter', size: ((visuals.xAxisFontSize || 11) - 1) * scalingRatio, weight: '700' },
+              color: '#64748b'
+            },
+            ticks: {
+              backdropColor: 'transparent',
+              color: '#94a3b8',
+              font: { family: 'Inter', size: 9 * scalingRatio },
+              callback: (val) => numberFormatter(val)
+            }
+          }
+        }
+        : {
           y: {
             display: visuals.grid,
-            beginAtZero: true,
-            // When showing percentage, force axis bounds to 0..100
-            max: config.showPercentage ? 100 : undefined,
+            beginAtZero: !isHorizontalMode,
+            max: (!isHorizontalMode && config.showPercentage) ? 100 : undefined,
             grid: { color: 'rgba(0,0,0,0.03)', drawBorder: false },
-            ticks: { 
+            ticks: {
+              display: visuals.showAxisTicks !== false,
               color: '#64748b',
-              font: { family: 'Inter', weight: '600', size: visuals.yAxisFontSize || 11 },
-              callback: (value) => (config.showPercentage ? `${value}%` : numberFormatter(value)),
-              padding: 10
+              maxRotation: isHorizontalMode ? 0 : 90,
+              minRotation: isHorizontalMode ? 0 : 0,
+              autoSkip: !isHorizontalMode,
+              autoSkipPadding: 15,
+              font: {
+                family: 'Inter',
+                weight: '600',
+                size: ((isHorizontalMode ? (visuals.xAxisFontSize > 12 ? 12 : visuals.xAxisFontSize) : visuals.yAxisFontSize) || 11) * scalingRatio
+              },
+              callback: function (value) {
+                if (isHorizontalMode) {
+                  let lbl = labels[value] || this.getLabelForValue(value);
+                  lbl = String(lbl);
+                  const maxChars = visuals.labelMaxLength || 20;
+                  if (lbl.length > maxChars) {
+                    const words = lbl.split(' ');
+                    const lines = [];
+                    let currentLine = '';
+                    words.forEach(word => {
+                      if ((currentLine + ' ' + word).trim().length <= maxChars) {
+                        currentLine = (currentLine + ' ' + word).trim();
+                      } else {
+                        if (currentLine) lines.push(currentLine);
+                        currentLine = word.length > maxChars ? word.slice(0, maxChars - 3) + '...' : word;
+                      }
+                    });
+                    if (currentLine) lines.push(currentLine);
+                    return lines;
+                  }
+                  return lbl;
+                }
+                if (config.showPercentage) {
+                  return `${Number(value).toFixed(0)}%`;
+                }
+                return numberFormatter(value);
+              },
+              padding: 8 * scalingRatio
             },
             title: {
-              display: visuals.showYAxisLabel,
-              text: config.yAxisLabel || config.yAxis,
+              display: isHorizontalMode ? visuals.showXAxisLabel : visuals.showYAxisLabel,
+              text: isHorizontalMode ? (config.xAxisLabel || config.xAxis) : (config.yAxisLabel || config.yAxis),
               color: '#475569',
-              font: { family: 'Inter', size: visuals.yAxisTitleFontSize || 12, weight: 'bold' },
-              padding: { bottom: 10 }
+              font: {
+                family: 'Inter',
+                size: ((isHorizontalMode ? visuals.xAxisTitleFontSize : visuals.yAxisTitleFontSize) || 12) * scalingRatio,
+                weight: 'bold'
+              },
+              padding: { bottom: 2 * scalingRatio }
             }
           },
           x: {
             display: visuals.grid,
+            beginAtZero: isHorizontalMode,
+            max: (isHorizontalMode && config.showPercentage) ? 100 : undefined,
             grid: { display: false },
-            ticks: { 
-              color: '#64748b', 
-              font: { family: 'Inter', weight: '600', size: visuals.xAxisFontSize || 11 },
-              padding: 10
+            ticks: {
+              display: visuals.showAxisTicks !== false,
+              color: '#64748b',
+              maxRotation: 0,
+              minRotation: 0,
+              autoSkip: isHorizontalMode,
+              autoSkipPadding: 15,
+              font: {
+                family: 'Inter',
+                weight: '600',
+                size: ((isHorizontalMode ? visuals.yAxisFontSize : (visuals.xAxisFontSize > 11 ? 11 : visuals.xAxisFontSize)) || 11) * scalingRatio
+              },
+              callback: function (value) {
+                if (isHorizontalMode) {
+                  if (config.showPercentage) {
+                    return `${Number(value).toFixed(0)}%`;
+                  }
+                  return numberFormatter(value);
+                }
+                let lbl = labels[value] || this.getLabelForValue(value);
+                lbl = String(lbl);
+                const maxChars = visuals.labelMaxLength || 20;
+                if (lbl.length > maxChars) {
+                  const words = lbl.split(' ');
+                  const lines = [];
+                  let currentLine = '';
+                  words.forEach(word => {
+                    if ((currentLine + ' ' + word).trim().length <= maxChars) {
+                      currentLine = (currentLine + ' ' + word).trim();
+                    } else {
+                      if (currentLine) lines.push(currentLine);
+                      currentLine = word.length > maxChars ? word.slice(0, maxChars - 3) + '...' : word;
+                    }
+                  });
+                  if (currentLine) lines.push(currentLine);
+                  return lines;
+                }
+                return lbl;
+              },
+              padding: (!isHorizontalMode ? (visuals.showIcons ? 12 : 8) : 8) * scalingRatio
             },
             title: {
-              display: visuals.showXAxisLabel,
-              text: config.xAxisLabel || config.xAxis,
+              display: isHorizontalMode ? visuals.showYAxisLabel : visuals.showXAxisLabel,
+              text: isHorizontalMode ? (config.yAxisLabel || config.yAxis) : (config.xAxisLabel || config.xAxis),
               color: '#475569',
-              font: { family: 'Inter', size: visuals.xAxisTitleFontSize || 12, weight: 'bold' },
-              padding: { top: 10 }
+              font: {
+                family: 'Inter',
+                size: ((isHorizontalMode ? visuals.yAxisTitleFontSize : visuals.xAxisTitleFontSize) || 12) * scalingRatio,
+                weight: 'bold'
+              },
+              padding: { top: 2 * scalingRatio }
             }
           }
         }
