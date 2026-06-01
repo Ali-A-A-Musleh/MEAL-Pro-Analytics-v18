@@ -10,6 +10,7 @@ import {
   PointElement,
   ArcElement,
   RadarController,
+  PolarAreaController,
   RadialLinearScale,
   Tooltip,
   Legend,
@@ -26,6 +27,7 @@ ChartJS.register(
   PointElement,
   ArcElement,
   RadarController,
+  PolarAreaController,
   Tooltip,
   Legend,
   Title,
@@ -194,8 +196,10 @@ export const getSemanticIcon = (label) => {
 export const buildChartOptions = (config, visuals, rawTotal, labels = [], filters = []) => {
   const scalingRatio = Math.max(0.4, visuals.chartHeight / 600);
 
-  const isHorizontalMode = ['bar', 'line', 'area'].includes(config.chartType) &&
-    visuals.chartOrientation === 'h';
+  const isHorizontalMode = ['horizontalBar', 'stackedHorizontalBar'].includes(config.chartType) ||
+    (['bar', 'stackedBar', 'line', 'spline', 'steppedLine', 'area', 'smoothArea', 'combo', 'scatter'].includes(config.chartType) && visuals.chartOrientation === 'h');
+
+  const isStackedMode = ['stackedBar', 'stackedHorizontalBar'].includes(config.chartType) || !!config.stacked;
 
   const numberFormatter = (value) => {
     const num = Number(value);
@@ -341,8 +345,8 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
           const rawValue = context.dataset.rawData?.[context.dataIndex] ?? Number(value);
           const percentage = rawTotal === 0 ? 0 : (Number(rawValue) / rawTotal) * 100;
 
-          // Hide labels for segments smaller than 2% in Pie/Doughnut charts to prevent overlaps
-          if (percentage < 2 && ['pie', 'doughnut'].includes(config.chartType)) return null;
+          // Hide labels for segments smaller than 2% in Pie/Doughnut/PolarArea charts to prevent overlaps
+          if (percentage < 2 && ['pie', 'doughnut', 'semiDoughnut', 'polarArea'].includes(config.chartType)) return null;
 
           if (config.showPercentage) {
             return `${percentage.toFixed(1)}%`;
@@ -351,9 +355,9 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
         }
       }
     },
-    scales: ['pie', 'doughnut'].includes(config.chartType)
+    scales: ['pie', 'doughnut', 'semiDoughnut'].includes(config.chartType)
       ? {}
-      : config.chartType === 'radar'
+      : ['radar', 'polarArea'].includes(config.chartType)
         ? {
           r: {
             grid: { color: 'rgba(0,0,0,0.05)' },
@@ -372,6 +376,7 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
         }
         : {
           y: {
+            stacked: isStackedMode,
             display: visuals.grid,
             beginAtZero: !isHorizontalMode,
             max: (!isHorizontalMode && config.showPercentage) ? 100 : undefined,
@@ -430,6 +435,7 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
             }
           },
           x: {
+            stacked: isStackedMode,
             display: visuals.grid,
             beginAtZero: isHorizontalMode,
             max: (isHorizontalMode && config.showPercentage) ? 100 : undefined,

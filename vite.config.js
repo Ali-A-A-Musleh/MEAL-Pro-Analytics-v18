@@ -18,5 +18,8 @@ export default defineConfig({
     target: 'es2020',
     assetsInlineLimit: 1000000,
     sourcemap: false
+  },
+  optimizeDeps: {
+    include: ['exceljs']
   }
 });

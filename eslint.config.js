@@ -16,6 +16,20 @@ export default [
       "no-unused-vars": "warn",
     },
     languageOptions: {
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        localStorage: "readonly",
+        confirm: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        console: "readonly",
+        Blob: "readonly",
+        FileReader: "readonly",
+        atob: "readonly",
+        ResizeObserver: "readonly",
+        alert: "readonly"
+      },
       parserOptions: {
         ecmaFeatures: { jsx: true },
       },

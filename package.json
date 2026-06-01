@@ -12,7 +12,6 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-
     "@fontsource/inter": "^4.5.14",
     "@iconify/react": "^6.0.2",
     "@platyplus/humanitarian-icons": "^0.1.3",
@@ -22,16 +21,19 @@
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "exceljs": "^3.4.0",
     "framer-motion": "^11.0.0",
     "fuse.js": "^7.3.0",
     "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.514.0",
     "motion": "^12.38.0",
     "react": "^18.3.1",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

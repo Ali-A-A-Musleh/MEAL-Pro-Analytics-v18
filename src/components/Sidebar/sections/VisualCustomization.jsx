@@ -2,13 +2,13 @@ import SafeIcon from '../../SafeIcon';
 import DynamicIcon from '../../DynamicIcon';
 import { colorPalettes } from '../../../utils/chartConfigs';
 
-const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals, onSetConfig, onPickGlobalIcon }) => {
+const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals, onSetConfig, onPickGlobalIcon, pinnedIndices = [], onClearPinnedIndices }) => {
   const palette = [visuals.primaryColor, visuals.secondaryColor, visuals.tertiaryColor, visuals.quaternaryColor];
 
   const handleSliderChange = (name, value) => {
     onSetVisuals({
       ...visuals,
-      [name]: name.includes('Width') || name.includes('Blur') || name.includes('Height') ? Number(value) : parseFloat(value)
+      [name]: name.includes('Width') || name.includes('Blur') || name.includes('Height') || ['cutout', 'scatterPointRadius', 'comboLineWidth'].includes(name) ? Number(value) : parseFloat(value)
     });
   };
 
@@ -165,6 +165,65 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
           </div>
         </div>
 
+        {/* Tooltips Configuration Section */}
+        <div className="flex flex-col gap-3 bg-white/50 p-4 rounded-[2rem] border border-slate-100 shadow-sm space-y-1">
+          <div className="flex justify-between items-center px-1">
+            <span className="text-[10px] font-black text-slate-700 uppercase tracking-wider">Interaction & Tooltips</span>
+            <SafeIcon name="HelpCircle" size={12} className="text-indigo-600" />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {[
+              { id: 'hover', label: 'Hover Only', icon: 'MousePointer', desc: 'Default interaction' },
+              { id: 'click', label: 'Click to Pin', icon: 'Pin', desc: 'Tap elements to stick' },
+              { id: 'peak', label: 'Show Peak', icon: 'TrendingUp', desc: 'Highest value pinned' },
+              { id: 'all', label: 'Show All', icon: 'Eye', desc: 'Display all labels' }
+            ].map(mode => {
+              const isActive = (visuals.tooltipMode || 'hover') === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => onSetVisuals({ ...visuals, tooltipMode: mode.id })}
+                  className={`p-3 rounded-2xl border flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+                    isActive 
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md scale-[1.02]' 
+                      : 'bg-white text-slate-600 border-slate-100 hover:border-slate-200'
+                  }`}
+                >
+                  <SafeIcon name={mode.icon} size={16} className={`mb-1 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <span className="text-[10px] font-black">{mode.label}</span>
+                  <span className={`text-[8px] mt-0.5 opacity-80 leading-none ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>{mode.desc}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Conditional helper elements based on selection */}
+          {(visuals.tooltipMode || 'hover') === 'click' && (
+            <div className="mt-2 p-2 bg-indigo-50/50 rounded-xl border border-indigo-100 flex flex-col gap-1.5 animate-fadeIn">
+              <span className="text-[8px] font-bold text-indigo-950/80 leading-normal flex items-center gap-1">
+                <SafeIcon name="Info" size={10} className="shrink-0 text-indigo-605" />
+                Tap any point/bar inside the chart to toggle pinning its tooltip!
+              </span>
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-[8.5px] font-black text-indigo-950">
+                  Pinned: {pinnedIndices.length} {pinnedIndices.length === 1 ? 'element' : 'elements'}
+                </span>
+                {pinnedIndices.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={onClearPinnedIndices}
+                    className="px-2 py-1 bg-red-100/80 hover:bg-red-200 text-red-700 text-[8.5px] font-black uppercase tracking-wider rounded-lg transition-all"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Legend Customization */}
         <div className="flex flex-col gap-3 bg-white/50 p-3 rounded-[2rem] border border-slate-100 shadow-sm">
           <div className="flex justify-between items-center px-1">
@@ -250,8 +309,8 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
           )}
         </div>
 
-        {/* Chart Orientation (Only for Bar, Line, Area) */}
-        {['bar', 'line', 'area'].includes(config.chartType) && (
+        {/* Chart Orientation (Only for Bar, Line, Area and variants) */}
+        {['bar', 'horizontalBar', 'stackedBar', 'stackedHorizontalBar', 'line', 'spline', 'steppedLine', 'area', 'smoothArea', 'scatter', 'combo'].includes(config.chartType) && (
           <div className="flex flex-col gap-3 bg-white/50 p-2 rounded-[2rem] border border-slate-100 shadow-sm">
             <span className="text-[10px] font-black text-slate-700 uppercase ml-3">Chart Orientation</span>
             <div className="flex bg-white p-1 rounded-full border border-slate-200">
@@ -347,7 +406,15 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
                   <input
                     type="color"
                     value={visuals[field]}
-                    onChange={(e) => onSetVisuals({ ...visuals, [field]: e.target.value })}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      const nextMode = index >= 2
+                        ? 'multi'
+                        : (field === 'secondaryColor' && visuals.colorMode === 'single')
+                          ? 'dual'
+                          : visuals.colorMode;
+                      onSetVisuals({ ...visuals, [field]: nextValue, colorMode: nextMode });
+                    }}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
                   <div 
@@ -398,6 +465,15 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
       <div className="space-y-4 pt-2">
         {[
           { label: 'Chart Height', value: visuals.chartHeight, name: 'chartHeight', min: 200, max: 1200, step: 10 },
+          ...(['doughnut', 'semiDoughnut'].includes(config.chartType) ? [
+            { label: 'Doughnut Hole Size', value: visuals.cutout ?? 50, name: 'cutout', min: 10, max: 90, step: 5 }
+          ] : []),
+          ...(config.chartType === 'scatter' ? [
+            { label: 'Scatter Point Radius', value: visuals.scatterPointRadius ?? 8, name: 'scatterPointRadius', min: 2, max: 30, step: 1 }
+          ] : []),
+          ...(config.chartType === 'combo' ? [
+            { label: 'Combo Trend Width', value: visuals.comboLineWidth ?? 3, name: 'comboLineWidth', min: 1, max: 10, step: 1 }
+          ] : []),
           { label: 'Curve Tension', value: visuals.tension, name: 'tension', min: 0, max: 1, step: 0.05 },
           { label: 'Fill Opacity', value: visuals.opacity, name: 'opacity', min: 0.1, max: 1, step: 0.05 },
           { label: 'Border Width', value: visuals.borderWidth, name: 'borderWidth', min: 0, max: 8, step: 1 },
@@ -419,7 +495,9 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
               <span className="text-indigo-600">
                 {slider.name === 'opacity' || slider.name === 'glassOpacity' 
                   ? `${Math.round(slider.value * 100)}%` 
-                  : `${slider.value}${slider.name === 'borderWidth' || slider.name === 'chartHeight' ? 'px' : ''}`}
+                  : slider.name === 'cutout'
+                  ? `${slider.value}%`
+                  : `${slider.value}${['borderWidth', 'chartHeight', 'scatterPointRadius', 'comboLineWidth'].includes(slider.name) ? 'px' : ''}`}
               </span>
             </div>
             <input

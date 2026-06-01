@@ -120,7 +120,7 @@ body {
   border: 3px dashed #cbd5e1;
   transition: border-color 0.3s ease, border-style 0.3s ease;
   min-height: 200px;
-  min-width: 300px;
+  width: 100%;
   max-width: 100%;
   height: auto;
 }

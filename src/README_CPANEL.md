@@ -1,27 +1,27 @@
-# تعليمات رفع التطبيق إلى cPanel
+# cPanel Deployment Instructions
 
-بما أن هذا التطبيق مبني باستخدام **React + Vite**، كـ "تطبيق صفحة واحدة" (Single Page Application - SPA)، فإنه يتطلب بعض الإعدادات الخاصة عند رفعه إلى سيرفر يعتمد على Apache (مثل أغلب سيرفرات cPanel).
+Since this application is built using **React + Vite** as a Single Page Application (SPA), it requires some special configuration when deploying to an Apache-based server (such as most cPanel hosts).
 
-## الخطوات الأساسية للرفع:
+## Deployment Steps:
 
-1. **بناء المشروع (Building):**
-   - قم بتشغيل الأمر التالي في جهازك المحلي (بعد تحميل الملفات من VC code):
+1. **Build the project:**
+   - Run the following command on your local machine (after opening the files in VS Code):
      ```bash
      npm run build
      ```
-   - سينتج عن هذا الأمر مجلد يسمى `dist`. هذا المجلد يحتوي على جميع الملفات التي تحتاج لرفعها.
+   - This command produces a folder named `dist`. That folder contains all the files you need to upload.
 
-2. **الرفع إلى cPanel:**
-   - ادخل إلى **File Manager** في لوحة تحكم cPanel.
-   - اذهب إلى المجلد الرئيسي لموقعك (عادة ما يكون `public_html`).
-   - قم برفع محتويات مجلد `dist` بالكامل إلى داخل `public_html`.
+2. **Upload to cPanel:**
+   - Open **File Manager** in your cPanel dashboard.
+   - Navigate to your website root folder (usually `public_html`).
+   - Upload the entire contents of the `dist` folder into `public_html`.
 
-3. **إعداد توجيه الروابط (Routing):**
-   - لقد قمت بالفعل بإضافة ملف يسمى `.htaccess` داخل مجلد `public` في المشروع.
-   - عند إجراء عملية البناء (Build)، سينتقل هذا الملف تلقائياً إلى مجلد `dist`.
-   - هذا الملف يضمن أن جميع الروابط تعمل بشكل صحيح ولا يظهر خطأ 404 عند تحديث الصفحة أو الدخول لروابط فرعية.
+3. **Routing setup:**
+   - A `.htaccess` file has already been added into the project's `public` folder.
+   - When you build the project, this file is automatically copied into the `dist` folder.
+   - This file ensures all routes work correctly and prevents 404 errors when refreshing the page or navigating to subpaths.
 
-## محتوى ملف .htaccess المرفق:
+## Included `.htaccess` content:
 ```apache
 <IfModule mod_rewrite.c>
   RewriteEngine On
@@ -34,6 +34,6 @@
 </IfModule>
 ```
 
-## ملاحظات هامة:
-- تأكد من تعيين نسخة **Node.js** مناسبة (مثل الإصدار 18 أو أحدث) إذا كنت تقوم بعملية البناء (Build) مباشرة على السيرفر عبر Terminal الخاص بـ cPanel.
-- إذا كنت ترفع الموقع في مجلد فرعي (مثلاً: `yourdomain.com/analytics/`) بدلاً من الموقع الرئيسي، ستحتاج لتعديل قيمة `base` في ملف `vite.config.js` لتكون `base: '/analytics/'`.
+## Important Notes:
+- Make sure your **Node.js** version is appropriate (for example, version 18 or newer) if you are building directly on the server using the cPanel Terminal.
+- If you are deploying the site to a subfolder (for example: `yourdomain.com/analytics/`) instead of the root domain, you will need to update the `base` value in `vite.config.js` to `base: '/analytics/'`.
