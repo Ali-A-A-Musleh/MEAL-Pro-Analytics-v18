@@ -1,9 +1,15 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import SafeIcon from '../../SafeIcon';
 
 const AdvancedFilters = ({ data, columns, advancedFilters, onToggleValue }) => {
   const [selectedColumn, setSelectedColumn] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [visibleLimit, setVisibleLimit] = useState(100);
+
+  // Reset limit when selection or search changes
+  useEffect(() => {
+    setVisibleLimit(100);
+  }, [selectedColumn, searchQuery]);
 
   const uniqueValues = useMemo(() => {
     if (!selectedColumn || !data.length) return [];
@@ -25,8 +31,10 @@ const AdvancedFilters = ({ data, columns, advancedFilters, onToggleValue }) => {
 
       <div className="space-y-3">
         <div>
-          <label className="text-[10px] font-black text-slate-500 block uppercase tracking-tighter">Select Column to Filter</label>
+          <label htmlFor="filter-column-select" className="text-[10px] font-black text-slate-500 block uppercase tracking-tighter">Select Column to Filter</label>
           <select
+            id="filter-column-select"
+            name="filter-column"
             value={selectedColumn}
             onChange={(e) => setSelectedColumn(e.target.value)}
             className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all"
@@ -41,8 +49,11 @@ const AdvancedFilters = ({ data, columns, advancedFilters, onToggleValue }) => {
         {selectedColumn && (
           <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="relative">
+              <label htmlFor="search-values-input" className="sr-only">Search values</label>
               <SafeIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" name="Search" size={14} />
               <input
+                id="search-values-input"
+                name="search-values"
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -52,7 +63,7 @@ const AdvancedFilters = ({ data, columns, advancedFilters, onToggleValue }) => {
             </div>
 
             <div className="max-h-48 overflow-y-auto space-y-1 pr-1 scrollbar-none">
-              {filteredValues.map((val) => {
+              {filteredValues.slice(0, visibleLimit).map((val) => {
                 const isExcluded = advancedFilters[selectedColumn]?.excluded.includes(val);
                 return (
                   <button
@@ -65,6 +76,22 @@ const AdvancedFilters = ({ data, columns, advancedFilters, onToggleValue }) => {
                   </button>
                 );
               })}
+
+              {filteredValues.length > visibleLimit && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleLimit(prev => prev + 100)}
+                    className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-[10px] font-black text-indigo-600 rounded-xl border border-dashed border-slate-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <SafeIcon name="ChevronDown" size={12} />
+                    Load More (+100)
+                  </button>
+                  <p className="text-[9px] font-bold text-slate-450 text-center mt-1.5">
+                    Showing {visibleLimit} of {filteredValues.length} unique values
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}

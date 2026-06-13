@@ -48,7 +48,7 @@ const SettingsUI = ({
         <div className="space-y-4">
           {/* X Axis Selector */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-slate-500 block uppercase tracking-tight flex items-center gap-1.5">
+            <label htmlFor="xaxis-select" className="text-[10px] font-black text-slate-500 block uppercase tracking-tight flex items-center gap-1.5">
               <span>Horizontal Axis (X)</span>
               {selectedXIsMultiple && (
                 <span className="flex items-center gap-1 text-[8px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full font-black uppercase">
@@ -58,8 +58,17 @@ const SettingsUI = ({
             </label>
             <div className="relative">
               <select
+                id="xaxis-select"
+                name="xaxis"
                 value={config.xAxis}
-                onChange={(e) => onSetConfig({ ...config, xAxis: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  onSetConfig({
+                    ...config,
+                    xAxis: val,
+                    chartTitle: columnAliases[val] || val || 'Interactive Report'
+                  });
+                }}
                 className="w-full p-3 pr-10 bg-white border border-slate-100 rounded-2xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all appearance-none cursor-pointer"
               >
                 <option value="">-- Select X Axis --</option>
@@ -81,7 +90,7 @@ const SettingsUI = ({
 
           {/* Y Axis Selector */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-slate-500 block uppercase tracking-tight flex items-center gap-1.5">
+            <label htmlFor="yaxis-select" className="text-[10px] font-black text-slate-500 block uppercase tracking-tight flex items-center gap-1.5">
               <span>Vertical Axis (Y)</span>
               {selectedYIsMultiple && (
                 <span className="flex items-center gap-1 text-[8px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full font-black uppercase">
@@ -91,6 +100,8 @@ const SettingsUI = ({
             </label>
             <div className="relative">
               <select
+                id="yaxis-select"
+                name="yaxis"
                 value={config.yAxis}
                 onChange={(e) => onSetConfig({ ...config, yAxis: e.target.value })}
                 className="w-full p-3 pr-10 bg-white border border-slate-100 rounded-2xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all appearance-none cursor-pointer"
@@ -114,7 +125,7 @@ const SettingsUI = ({
 
           {/* Group By Selector */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-slate-500 block uppercase tracking-tight flex items-center gap-1.5">
+            <label htmlFor="groupby-select" className="text-[10px] font-black text-slate-500 block uppercase tracking-tight flex items-center gap-1.5">
               <span>Group By</span>
               {selectedGroupIsMultiple && (
                 <span className="flex items-center gap-1 text-[8px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full font-black uppercase">
@@ -124,6 +135,8 @@ const SettingsUI = ({
             </label>
             <div className="relative">
               <select
+                id="groupby-select"
+                name="groupby"
                 value={config.groupBy}
                 onChange={(e) => onSetConfig({ ...config, groupBy: e.target.value })}
                 className="w-full p-3 pr-10 bg-indigo-50/30 border border-indigo-50 rounded-2xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all appearance-none cursor-pointer"
@@ -248,105 +261,95 @@ const SettingsUI = ({
                 </div>
 
                 {/* Expanded Accordion Area */}
-                <AnimatePresence>
-                  {isExpanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeInOut' }}
-                      className="overflow-hidden border-t border-slate-50/80 bg-slate-50/20"
-                    >
-                      <div className="p-4 space-y-3">
-                        {hasSuggestion && (
-                          <div className="p-3 bg-amber-50/60 border border-amber-200/30 rounded-2xl text-[10px] text-amber-900 font-bold gap-3 flex items-center justify-between">
-                            <span className="flex items-center gap-2 text-amber-800">
-                              <SafeIcon name="AlertTriangle" size={12} className="text-amber-500 animate-bounce shrink-0" />
-                              <span>Recognized as choice responsive. Recommend format upgrade?</span>
-                            </span>
+                {isExpanded && (
+                  <div className="border-t border-slate-50/80 bg-slate-50/20 p-4 space-y-3 transition-all duration-150">
+                    {hasSuggestion && (
+                      <div className="p-3 bg-amber-50/60 border border-amber-200/30 rounded-2xl text-[10px] text-amber-900 font-bold gap-3 flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-amber-800 font-sans">
+                          <SafeIcon name="AlertTriangle" size={12} className="text-amber-500 animate-bounce shrink-0" />
+                          <span>Recognized as choice responsive. Recommend format upgrade?</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onChangeColumnType(col, 'select_multiple')}
+                          className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-black tracking-wider text-[9px] uppercase transition-all shadow-sm shrink-0"
+                        >
+                          Upgrade
+                        </button>
+                      </div>
+                    )}
+
+                    {type === 'select_multiple' ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                            Visible Labels Filter
+                          </span>
+                          <div className="flex gap-2">
                             <button
                               type="button"
-                              onClick={() => onChangeColumnType(col, 'select_multiple')}
-                              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-black tracking-wider text-[9px] uppercase transition-all shadow-sm shrink-0"
+                              onClick={() => onSelectAllMultipleChoices(col)}
+                              className="text-[9px] font-black text-indigo-600 hover:text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg transition-colors shadow-sm cursor-pointer select-none"
                             >
-                              Upgrade
+                              All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onSelectNoneMultipleChoices(col)}
+                              className="text-[9px] font-black text-slate-500 hover:text-slate-600 bg-white border border-slate-100 px-2 py-0.5 rounded-lg transition-colors shadow-sm cursor-pointer select-none"
+                            >
+                              Clear
                             </button>
                           </div>
-                        )}
+                        </div>
 
-                        {type === 'select_multiple' ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
-                                Visible Labels Filter
-                              </span>
-                              <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => onSelectAllMultipleChoices(col)}
-                                  className="text-[9px] font-black text-indigo-600 hover:text-indigo-700 bg-white border border-indigo-100 px-2 py-0.5 rounded-lg transition-colors shadow-sm cursor-pointer select-none"
-                                >
-                                  All
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => onSelectNoneMultipleChoices(col)}
-                                  className="text-[9px] font-black text-slate-500 hover:text-slate-600 bg-white border border-slate-100 px-2 py-0.5 rounded-lg transition-colors shadow-sm cursor-pointer select-none"
-                                >
-                                  Clear
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto no-scrollbar bg-white border border-slate-100/50 rounded-2xl p-2">
-                              {choices.length === 0 ? (
-                                <span className="text-[9px] text-slate-400 font-bold block text-center py-2 italic">
-                                  No options detected.
-                                </span>
-                              ) : (
-                                choices.map((choice) => {
-                                  const isChecked = selected.includes(choice);
-                                  return (
-                                    <button
-                                      key={choice}
-                                      type="button"
-                                      onClick={() => onToggleMultipleChoice(col, choice)}
-                                      className={`flex items-center justify-between p-2 rounded-xl border text-left transition-all text-[11px] font-semibold select-none cursor-pointer min-w-0 ${
-                                        isChecked
-                                          ? 'border-indigo-200 bg-indigo-50/30 text-indigo-950 shadow-sm'
-                                          : 'border-slate-50 hover:border-slate-200 text-slate-600 bg-slate-50/10'
-                                      }`}
-                                    >
-                                      <span className="truncate pr-2" title={choice}>
-                                        {choice}
-                                      </span>
-                                      <div
-                                        className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-all ${
-                                          isChecked
-                                            ? 'bg-indigo-600 border-indigo-600 text-white'
-                                            : 'border-slate-300 bg-white'
-                                        }`}
-                                      >
-                                        {isChecked && <SafeIcon name="Check" size={8} />}
-                                      </div>
-                                    </button>
-                                  );
-                                })
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100/60 rounded-2xl p-3 leading-relaxed flex items-center gap-2">
-                            <SafeIcon name="Info" size={14} className="text-slate-400 shrink-0" />
-                            <span>
-                              This is mapped as a regular {type === 'number' ? 'numeric column' : 'text column'}. Its items are plotted directly on the labels or computed quantitatively. Expand type formats to select multiple filters.
+                        <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto no-scrollbar bg-white border border-slate-100/50 rounded-2xl p-2 animate-fadeIn">
+                          {choices.length === 0 ? (
+                            <span className="text-[9px] text-slate-400 font-bold block text-center py-2 italic font-sans">
+                              No options detected.
                             </span>
-                          </div>
-                        )}
+                          ) : (
+                            choices.map((choice) => {
+                              const isChecked = selected.includes(choice);
+                              return (
+                                <button
+                                  key={choice}
+                                  type="button"
+                                  onClick={() => onToggleMultipleChoice(col, choice)}
+                                  className={`flex items-center justify-between p-2 rounded-xl border text-left transition-all text-[11px] font-semibold select-none cursor-pointer min-w-0 ${
+                                    isChecked
+                                      ? 'border-indigo-200 bg-indigo-50/30 text-indigo-950 shadow-sm'
+                                      : 'border-slate-50 hover:border-slate-200 text-slate-600 bg-slate-50/10'
+                                  }`}
+                                >
+                                  <span className="truncate pr-2 font-sans" title={choice}>
+                                    {choice}
+                                  </span>
+                                  <div
+                                    className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-all ${
+                                      isChecked
+                                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                                        : 'border-slate-300 bg-white'
+                                    }`}
+                                  >
+                                    {isChecked && <SafeIcon name="Check" size={8} />}
+                                  </div>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    ) : (
+                      <div className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-100/60 rounded-2xl p-3 leading-relaxed flex items-center gap-2">
+                        <SafeIcon name="Info" size={14} className="text-slate-400 shrink-0" />
+                        <span className="font-sans">
+                          This is mapped as a regular {type === 'number' ? 'numeric column' : 'text column'}. Its items are plotted directly on the labels or computed quantitatively. Expand type formats to select multiple filters.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

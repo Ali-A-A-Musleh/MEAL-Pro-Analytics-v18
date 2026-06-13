@@ -200,6 +200,9 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
     (['bar', 'stackedBar', 'line', 'spline', 'steppedLine', 'area', 'smoothArea', 'combo', 'scatter'].includes(config.chartType) && visuals.chartOrientation === 'h');
 
   const isStackedMode = ['stackedBar', 'stackedHorizontalBar'].includes(config.chartType) || !!config.stacked;
+  const dynamicXAxisTicks = Math.max(4, Math.min(12, Math.ceil((labels.length || 10) / 2)));
+  const compactXAxisTicks = visuals.compactXAxisLabels ? Math.max(6, ((isHorizontalMode ? visuals.yAxisFontSize : visuals.xAxisFontSize) || 11) - 2) : ((isHorizontalMode ? visuals.yAxisFontSize : (visuals.xAxisFontSize > 11 ? 11 : visuals.xAxisFontSize)) || 11);
+  const xAxisMaxTicks = visuals.compactXAxisLabels ? Math.max(labels.length || 0, dynamicXAxisTicks) : dynamicXAxisTicks;
 
   const numberFormatter = (value) => {
     const num = Number(value);
@@ -256,7 +259,7 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
           generateLabels: (chart) => {
             const datasets = chart.data.datasets;
             const labels = chart.data.labels;
-            const charLimit = visuals.labelMaxLength || 40;
+            const charLimit = visuals.legendLabelMaxLength || 40;
 
             if (config.groupBy) {
               return datasets.map((dataset, index) => {
@@ -379,7 +382,9 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
             stacked: isStackedMode,
             display: visuals.grid,
             beginAtZero: !isHorizontalMode,
-            max: (!isHorizontalMode && config.showPercentage) ? 100 : undefined,
+            max: (!isHorizontalMode && typeof visuals.yAxisMax === 'number' && visuals.yAxisMax > 0)
+              ? visuals.yAxisMax
+              : (!isHorizontalMode && config.showPercentage ? 100 : undefined),
             grid: { color: 'rgba(0,0,0,0.03)', drawBorder: false },
             ticks: {
               display: visuals.showAxisTicks !== false,
@@ -397,20 +402,17 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
                 if (isHorizontalMode) {
                   let lbl = labels[value] || this.getLabelForValue(value);
                   lbl = String(lbl);
-                  const maxChars = visuals.labelMaxLength || 20;
-                  if (lbl.length > maxChars) {
-                    const words = lbl.split(' ');
+                  const maxChars = visuals.xAxisLabelMaxLength || 20;
+                  const shouldTruncate = visuals.compactXAxisLabels || visuals.applyXAxisCharLimit || (visuals.xAxisLabelMaxLength && visuals.xAxisLabelMaxLength > 0);
+                  if (shouldTruncate && lbl.length > maxChars) {
+                    lbl = lbl.slice(0, Math.max(0, maxChars - 3)) + '...';
+                  }
+                  const wrapLength = visuals.xAxisLabelWrapLength && visuals.xAxisLabelWrapLength > 0 ? visuals.xAxisLabelWrapLength : 0;
+                  if (wrapLength > 0) {
                     const lines = [];
-                    let currentLine = '';
-                    words.forEach(word => {
-                      if ((currentLine + ' ' + word).trim().length <= maxChars) {
-                        currentLine = (currentLine + ' ' + word).trim();
-                      } else {
-                        if (currentLine) lines.push(currentLine);
-                        currentLine = word.length > maxChars ? word.slice(0, maxChars - 3) + '...' : word;
-                      }
-                    });
-                    if (currentLine) lines.push(currentLine);
+                    for (let i = 0; i < lbl.length; i += wrapLength) {
+                      lines.push(lbl.slice(i, i + wrapLength));
+                    }
                     return lines;
                   }
                   return lbl;
@@ -438,19 +440,22 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
             stacked: isStackedMode,
             display: visuals.grid,
             beginAtZero: isHorizontalMode,
-            max: (isHorizontalMode && config.showPercentage) ? 100 : undefined,
+            max: (isHorizontalMode && typeof visuals.yAxisMax === 'number' && visuals.yAxisMax > 0)
+              ? visuals.yAxisMax
+              : (isHorizontalMode && config.showPercentage ? 100 : undefined),
             grid: { display: false },
             ticks: {
               display: visuals.showAxisTicks !== false,
               color: '#64748b',
-              maxRotation: 0,
-              minRotation: 0,
-              autoSkip: isHorizontalMode,
-              autoSkipPadding: 15,
+              maxRotation: visuals.compactXAxisLabels ? 90 : 45,
+              minRotation: visuals.compactXAxisLabels ? 45 : 0,
+              autoSkip: !(visuals.compactXAxisLabels || visuals.showAllXAxisLabels),
+              maxTicksLimit: visuals.showAllXAxisLabels ? (labels.length || xAxisMaxTicks) : xAxisMaxTicks,
+              autoSkipPadding: visuals.compactXAxisLabels ? 8 : 15,
               font: {
                 family: 'Inter',
                 weight: '600',
-                size: ((isHorizontalMode ? visuals.yAxisFontSize : (visuals.xAxisFontSize > 11 ? 11 : visuals.xAxisFontSize)) || 11) * scalingRatio
+                size: compactXAxisTicks * scalingRatio
               },
               callback: function (value) {
                 if (isHorizontalMode) {
@@ -461,20 +466,17 @@ export const buildChartOptions = (config, visuals, rawTotal, labels = [], filter
                 }
                 let lbl = labels[value] || this.getLabelForValue(value);
                 lbl = String(lbl);
-                const maxChars = visuals.labelMaxLength || 20;
-                if (lbl.length > maxChars) {
-                  const words = lbl.split(' ');
+                const maxChars = visuals.xAxisLabelMaxLength || 20;
+                const shouldTruncate = visuals.compactXAxisLabels || visuals.applyXAxisCharLimit || (visuals.xAxisLabelMaxLength && visuals.xAxisLabelMaxLength > 0);
+                if (shouldTruncate && lbl.length > maxChars) {
+                  lbl = lbl.slice(0, Math.max(0, maxChars - 3)) + '...';
+                }
+                const wrapLength = visuals.xAxisLabelWrapLength && visuals.xAxisLabelWrapLength > 0 ? visuals.xAxisLabelWrapLength : 0;
+                if (wrapLength > 0) {
                   const lines = [];
-                  let currentLine = '';
-                  words.forEach(word => {
-                    if ((currentLine + ' ' + word).trim().length <= maxChars) {
-                      currentLine = (currentLine + ' ' + word).trim();
-                    } else {
-                      if (currentLine) lines.push(currentLine);
-                      currentLine = word.length > maxChars ? word.slice(0, maxChars - 3) + '...' : word;
-                    }
-                  });
-                  if (currentLine) lines.push(currentLine);
+                  for (let i = 0; i < lbl.length; i += wrapLength) {
+                    lines.push(lbl.slice(i, i + wrapLength));
+                  }
                   return lines;
                 }
                 return lbl;

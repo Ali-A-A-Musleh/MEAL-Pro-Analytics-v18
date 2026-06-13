@@ -64,10 +64,12 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
               ].map((slider) => (
                 <div key={slider.name} className="px-1">
                   <div className="flex justify-between text-[8px] font-black text-indigo-400 uppercase mb-1">
-                    <span>{slider.label}</span>
+                    <label htmlFor={`slider-${slider.name}`}>{slider.label}</label>
                     <span className="text-indigo-900">{slider.value}</span>
                   </div>
                   <input
+                    id={`slider-${slider.name}`}
+                    name={slider.name}
                     type="range"
                     min={slider.min}
                     max={slider.max}
@@ -80,14 +82,33 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
               ))}
             </div>
             
-            <div className="flex items-center justify-between px-2 pt-1 border-t border-indigo-100 mt-2">
-              <span className="text-[9px] font-black text-indigo-300 uppercase">Vector Color</span>
-              <input 
-                type="color" 
-                value={visuals.iconColor} 
-                onChange={(e) => onSetVisuals({ ...visuals, iconColor: e.target.value })}
-                className="w-10 h-6 rounded-lg border-0 cursor-pointer overflow-hidden bg-transparent" 
-              />
+            <div className="flex items-center justify-between px-2 pt-1 border-t border-indigo-100 mt-2 gap-2">
+              <div className="flex flex-col">
+                <label htmlFor="icon-color-picker" className="text-[9px] font-black text-indigo-300 uppercase">Vector Color</label>
+                {!visuals.iconColor && (
+                  <span className="text-[8px] font-bold text-slate-450 capitalize">Dynamic theme matches</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {visuals.iconColor && (
+                  <button
+                    type="button"
+                    onClick={() => onSetVisuals({ ...visuals, iconColor: '' })}
+                    className="text-[8px] font-black text-rose-600 bg-rose-50 hover:bg-rose-100 px-1.5 py-0.5 rounded transition-all cursor-pointer uppercase tracking-tight"
+                    title="Reset to dynamic theme colors"
+                  >
+                    Reset
+                  </button>
+                )}
+                <input 
+                  id="icon-color-picker"
+                  name="iconColor"
+                  type="color" 
+                  value={visuals.iconColor || '#4f46e5'} 
+                  onChange={(e) => onSetVisuals({ ...visuals, iconColor: e.target.value })}
+                  className="w-10 h-6 rounded-lg border-0 cursor-pointer overflow-hidden bg-transparent animate-pulse" 
+                />
+              </div>
             </div>
           </div>
         )}
@@ -134,18 +155,51 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
           </div>
         </div>
 
+        <div className="flex flex-col gap-2 bg-white/50 p-3 rounded-[2rem] border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between text-[10px] font-black text-slate-700 uppercase">
+            <span>Axis Max Value</span>
+            <span className="text-slate-500 text-[9px]">Auto / Manual</span>
+          </div>
+          <div className="grid grid-cols-[1fr_auto] gap-3 items-center">
+            <input
+              type="number"
+              min="1"
+              max="999999999"
+              value={visuals.yAxisMax ?? ''}
+              placeholder="auto"
+              onChange={(e) => {
+                const nextValue = e.target.value === '' ? null : Math.max(1, Number(e.target.value) || 1);
+                onSetVisuals({ ...visuals, yAxisMax: nextValue });
+              }}
+              className="w-full p-3 rounded-2xl border border-slate-200 bg-slate-50/50 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all text-slate-850"
+            />
+            <button
+              type="button"
+              onClick={() => onSetVisuals({ ...visuals, yAxisMax: null })}
+              className="px-3 py-2 rounded-2xl bg-slate-100 text-slate-600 font-bold text-[10px] uppercase tracking-wider hover:bg-slate-200 transition-all font-sans"
+            >
+              auto
+            </button>
+          </div>
+          <p className="text-[9px] text-slate-400 leading-5">
+            Set a manual maximum for the value axis. Leave blank for auto scaling, or enter values like 80, 1000, 1000000.
+          </p>
+        </div>
+
         {/* Value Label Placement & Color */}
         <div className="flex flex-col gap-3 bg-white/50 p-2 rounded-[2rem] border border-slate-100 shadow-sm">
           <div className="flex justify-between items-center px-3">
             <span className="text-[10px] font-black text-slate-700 uppercase">Value Customization</span>
             <div className="flex items-center gap-2">
               <input 
+                id="data-label-color-picker"
+                name="dataLabelColor"
                 type="color" 
                 value={visuals.dataLabelColor} 
                 onChange={(e) => onSetVisuals({ ...visuals, dataLabelColor: e.target.value })}
                 className="w-5 h-5 rounded-full border-0 cursor-pointer overflow-hidden bg-transparent" 
               />
-              <span className="text-[9px] font-bold text-slate-400">Color</span>
+              <label htmlFor="data-label-color-picker" className="text-[9px] font-bold text-slate-400">Color</label>
             </div>
           </div>
           
@@ -259,10 +313,12 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
               {/* Legend Font Size */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[9px] font-black text-slate-500 uppercase">
-                  <span>Font Size</span>
+                  <label htmlFor="legendFontSize-slider">Font Size</label>
                   <span className="text-indigo-600">{visuals.legendFontSize || 12}px</span>
                 </div>
                 <input 
+                  id="legendFontSize-slider"
+                  name="legendFontSize"
                   type="range"
                   min="8"
                   max="20"
@@ -276,10 +332,12 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
               {(visuals.legendPosition === 'left' || visuals.legendPosition === 'right') && (
                 <div className="space-y-1">
                   <div className="flex justify-between text-[9px] font-black text-slate-500 uppercase">
-                    <span>Legend Width</span>
+                    <label htmlFor="legendWidth-slider">Legend Width</label>
                     <span className="text-indigo-600">{visuals.legendWidth || 200}px</span>
                   </div>
                   <input 
+                    id="legendWidth-slider"
+                    name="legendWidth"
                     type="range"
                     min="120"
                     max="300"
@@ -293,10 +351,12 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
               {/* Legend Spacing */}
               <div className="space-y-1">
                 <div className="flex justify-between text-[9px] font-black text-slate-500 uppercase">
-                  <span>Legend Spacing</span>
+                  <label htmlFor="legendSpacing-slider">Legend Spacing</label>
                   <span className="text-indigo-600">{visuals.legendSpacing || 30}px</span>
                 </div>
                 <input 
+                  id="legendSpacing-slider"
+                  name="legendSpacing"
                   type="range"
                   min="0"
                   max="80"
@@ -387,7 +447,8 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
                 primaryColor: p.p,
                 secondaryColor: p.s,
                 tertiaryColor: p.t,
-                quaternaryColor: p.q
+                quaternaryColor: p.q,
+                iconColor: ''
               })}
               className="w-full aspect-square rounded-full shadow-sm border-2 border-white hover:scale-110 active:scale-95 transition-all opacity-90 hover:opacity-100"
               style={{ background: `linear-gradient(135deg, ${p.p} 0%, ${p.s} 50%, ${p.t} 100%, ${p.q} 100%)` }}
@@ -404,6 +465,8 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
               <div key={field} className="flex flex-col items-center gap-2">
                 <div className="relative w-10 h-10 group">
                   <input
+                    id={`color-picker-${field}`}
+                    name={field}
                     type="color"
                     value={visuals[field]}
                     onChange={(e) => {
@@ -442,6 +505,8 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
                   <span className="text-[10px] font-black text-slate-600 truncate flex-1 ml-1">{label}</span>
                   <div className="relative w-8 h-8 group shrink-0">
                     <input
+                      id={`label-color-${label.replace(/\s+/g, '-')}`}
+                      name={`labelColor-${label}`}
                       type="color"
                       value={visuals.labelColorMap[label] || visuals.primaryColor}
                       onChange={(e) => onSetVisuals({
@@ -491,7 +556,7 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
         ].map((slider) => (
           <div key={slider.name} className="space-y-1.5">
             <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-tight">
-              <span>{slider.label}</span>
+              <label htmlFor={`slider-main-${slider.name}`}>{slider.label}</label>
               <span className="text-indigo-600">
                 {slider.name === 'opacity' || slider.name === 'glassOpacity' 
                   ? `${Math.round(slider.value * 100)}%` 
@@ -501,6 +566,8 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
               </span>
             </div>
             <input
+              id={`slider-main-${slider.name}`}
+              name={slider.name}
               type="range"
               min={slider.min}
               max={slider.max}
@@ -523,6 +590,9 @@ const VisualCustomization = ({ visuals, config, aggregatedResults, onSetVisuals,
           { name: 'showTrendline', icon: 'TrendingUp', label: 'Linear Trend' },
           { name: 'showRawPath', icon: 'Share2', label: 'Raw Path' },
           { name: 'showAxisTicks', icon: 'Type', label: 'Axis Ticks' },
+          { name: 'compactXAxisLabels', icon: 'Type', label: 'Compact X Labels' },
+          { name: 'applyXAxisCharLimit', icon: 'Type', label: 'Apply X Limit' },
+          { name: 'showAllXAxisLabels', icon: 'Eye', label: 'Show All X Labels' },
           { name: 'showXAxisLabel', icon: 'ArrowRight', label: 'X Axis Label' },
           { name: 'showYAxisLabel', icon: 'ArrowUp', label: 'Y Axis Label' }
         ].map((item) => {

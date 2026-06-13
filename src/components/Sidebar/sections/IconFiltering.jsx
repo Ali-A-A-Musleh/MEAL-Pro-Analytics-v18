@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import SafeIcon from '../../SafeIcon';
 import DynamicIcon from '../../DynamicIcon';
+import { useDebounce } from '../../../hooks/useDebounce';
 
 const IconFiltering = ({
   filters,
@@ -27,13 +28,14 @@ const IconFiltering = ({
   getCategoryIconWithPreference
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [editingLabel, setEditingLabel] = useState(null);
   const [editValue, setEditValue] = useState('');
 
   // Filter active categories based on search input
   const filteredCategories = filters.filter(item => 
-    (item.label || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (legendAliases?.[item.label] || '').toLowerCase().includes(searchQuery.toLowerCase())
+    (item.label || '').toLowerCase().includes(debouncedSearchQuery.toLowerCase()) ||
+    (legendAliases?.[item.label] || '').toLowerCase().includes(debouncedSearchQuery.toLowerCase())
   );
 
   const startEditing = (label) => {
@@ -97,8 +99,11 @@ const IconFiltering = ({
 
       {/* Search Input for Sidebar Categories */}
       <div className="relative">
+        <label htmlFor="search-active-categories" className="sr-only">Search active categories</label>
         <SafeIcon name="Search" size={12} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input
+          id="search-active-categories"
+          name="search-active-categories"
           type="text"
           placeholder="Search active categories..."
           value={searchQuery}
@@ -153,6 +158,9 @@ const IconFiltering = ({
                   <div className="flex-1 min-w-0 pr-2">
                     {editingLabel === item.label ? (
                       <input
+                        id={`edit-category-${idx}`}
+                        name={`edit-category-${idx}`}
+                        aria-label="Edit category name"
                         autoFocus
                         type="text"
                         value={editValue}

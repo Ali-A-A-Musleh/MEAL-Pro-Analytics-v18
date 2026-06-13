@@ -27,8 +27,15 @@ export default [
         Blob: "readonly",
         FileReader: "readonly",
         atob: "readonly",
+        btoa: "readonly",
         ResizeObserver: "readonly",
-        alert: "readonly"
+        alert: "readonly",
+        XMLSerializer: "readonly",
+        requestAnimationFrame: "readonly",
+        HTMLCanvasElement: "readonly",
+        URL: "readonly",
+        Worker: "readonly",
+        self: "readonly"
       },
       parserOptions: {
         ecmaFeatures: { jsx: true },

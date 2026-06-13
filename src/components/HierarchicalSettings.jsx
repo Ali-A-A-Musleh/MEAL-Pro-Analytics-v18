@@ -18,17 +18,67 @@ import {
   addOrUpdateSetting,
   deleteSetting,
   exportSettings,
-  importSettingsFile
+  importSettingsFile,
+  setDesignSettings,
+  getDesignSettings
 } from '../services/SettingsService';
 
 export default function HierarchicalSettings({
   selectedProject = '',
   selectedDesign = '',
   onChangeProject,
-  onChangeDesign
+  onChangeDesign,
+  config = {},
+  visuals = {},
+  onSetConfigAndVisuals
 }) {
   // Sync state with localStorage through a reactive React state
   const [settings, setSettings] = useState(() => loadSettings());
+
+  const handleOverwriteDesignSubset = () => {
+    if (!selectedProject || !selectedDesign) return;
+    
+    const combined = { ...config, ...visuals };
+    setDesignSettings(selectedProject, selectedDesign, combined);
+    triggerRefresh();
+    
+    setAlert({
+      type: 'success',
+      message: `Saved current styling configurations to "${selectedDesign}" successfully.`
+    });
+    setTimeout(() => setAlert(null), 3500);
+  };
+
+  const handleRestoreDesignSubset = () => {
+    if (!selectedProject || !selectedDesign) return;
+    
+    const designSettings = getDesignSettings(selectedProject, selectedDesign);
+    if (!designSettings || !Object.keys(designSettings).length) {
+      setAlert({
+        type: 'error',
+        message: 'No saved styles found for this design subset.'
+      });
+      setTimeout(() => setAlert(null), 3000);
+      return;
+    }
+    
+    const nextConfig = { ...config };
+    const nextVisuals = { ...visuals };
+    
+    Object.entries(designSettings).forEach(([key, item]) => {
+      const val = item && typeof item === 'object' && 'value' in item ? item.value : item;
+      if (key in nextConfig) nextConfig[key] = val;
+      if (key in nextVisuals) nextVisuals[key] = val;
+    });
+    
+    onSetConfigAndVisuals?.(nextConfig, nextVisuals);
+    
+    setAlert({
+      type: 'success',
+      message: `Restored saved stylesheet from design subset "${selectedDesign}".`
+    });
+    setTimeout(() => setAlert(null), 3500);
+  };
   
   const [showAddProject, setShowAddProject] = useState(false);
   const [showAddDesign, setShowAddDesign] = useState(false);
@@ -57,15 +107,17 @@ export default function HierarchicalSettings({
   const customizationFormRef = useRef(null);
 
   // Helper to re-read and broadcast settings update
-  const triggerRefresh = () => {
+  const triggerRefresh = (broadcast = true) => {
     const current = loadSettings();
     setSettings(current);
-    window.dispatchEvent(new window.Event('project-settings-updated'));
+    if (broadcast) {
+      window.dispatchEvent(new window.Event('project-settings-updated'));
+    }
   };
 
   // Auto sync on selection change
   useEffect(() => {
-    triggerRefresh();
+    triggerRefresh(false);
   }, [selectedProject, selectedDesign]);
 
   // Focus effect for project input
@@ -354,7 +406,7 @@ export default function HierarchicalSettings({
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 pb-1 select-none">
             <Network size={12} className="text-indigo-500" />
-            <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
+            <label htmlFor="project-node-select" className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
               Select Project
             </label>
           </div>
@@ -371,6 +423,8 @@ export default function HierarchicalSettings({
                   className="flex items-center w-full h-full animate-fade-in"
                 >
                   <select
+                    id="project-node-select"
+                    name="project-node"
                     value={selectedProject}
                     onChange={e => {
                       onChangeProject?.(e.target.value);
@@ -404,7 +458,10 @@ export default function HierarchicalSettings({
                   exit={{ opacity: 0 }}
                   className="flex items-center w-full h-full"
                 >
+                    <label htmlFor="add-project-input" className="sr-only">New Project Code</label>
                     <input
+                      id="add-project-input"
+                      name="add-project-input"
                       ref={projectInputRef}
                       type="text"
                       value={newProjectName}
@@ -482,7 +539,7 @@ export default function HierarchicalSettings({
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 pb-1 select-none">
             <Settings size={12} className="text-sky-500" />
-            <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
+            <label htmlFor="design-node-select" className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
               Select Design Subset
             </label>
           </div>
@@ -503,6 +560,8 @@ export default function HierarchicalSettings({
                   className="flex items-center w-full h-full animate-fade-in"
                 >
                   <select
+                    id="design-node-select"
+                    name="design-node"
                     value={selectedDesign}
                     onChange={e => onChangeDesign?.(e.target.value)}
                     disabled={!selectedProject}
@@ -539,7 +598,10 @@ export default function HierarchicalSettings({
                   exit={{ opacity: 0 }}
                   className="flex items-center w-full h-full"
                 >
+                    <label htmlFor="add-design-input" className="sr-only">New Design Custom Code</label>
                     <input
+                      id="add-design-input"
+                      name="add-design-input"
                       ref={designInputRef}
                       type="text"
                       value={newDesignName}
@@ -601,6 +663,34 @@ export default function HierarchicalSettings({
               ))}
             </div>
           )}
+
+          {selectedDesign && (
+            <div className="mt-3 p-3 bg-indigo-50/40 rounded-2xl border border-indigo-100/80 flex flex-col gap-2 animate-fade-in">
+              <span className="text-[9px] font-black text-indigo-600 uppercase tracking-wider block">
+                Design Subset Workspace ({selectedDesign})
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleOverwriteDesignSubset}
+                  className="py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow active:scale-95 cursor-pointer"
+                  title="Overwrite this subset parameters with current visual/chart settings"
+                >
+                  <SafeIcon name="Save" size={12} />
+                  Save Styles
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRestoreDesignSubset}
+                  className="py-2 px-3 bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-200 hover:border-indigo-300 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm hover:shadow active:scale-95 cursor-pointer"
+                  title="Restore original styles from this design subset"
+                >
+                  <SafeIcon name="RefreshCw" size={11} />
+                  Restore Styles
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -642,7 +732,10 @@ export default function HierarchicalSettings({
           </button>
         </div>
 
+        <label htmlFor="import-excel-input" className="sr-only">Import Excel File</label>
         <input
+          id="import-excel-input"
+          name="import-excel"
           ref={fileInputRef}
           type="file"
           accept=".xlsx,.xls"
@@ -722,10 +815,12 @@ export default function HierarchicalSettings({
             {/* Row inputs */}
             <div className="space-y-3">
               <div>
-                <label className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider mb-1 select-none">
+                <label htmlFor="parameter-key-input" className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider mb-1 select-none">
                   Parameter Key (Unique Identifier)
                 </label>
                 <input
+                  id="parameter-key-input"
+                  name="parameter-key-input"
                   type="text"
                   value={settingKey}
                   onChange={e => setSettingKey(e.target.value)}
@@ -735,10 +830,12 @@ export default function HierarchicalSettings({
               </div>
 
               <div>
-                <label className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider mb-1 select-none">
+                <label htmlFor="parameter-value-input" className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider mb-1 select-none">
                   Parameter Value (System Variable)
                 </label>
                 <input
+                  id="parameter-value-input"
+                  name="parameter-value-input"
                   type="text"
                   value={settingValue}
                   onChange={e => setSettingValue(e.target.value)}
@@ -748,10 +845,12 @@ export default function HierarchicalSettings({
               </div>
 
               <div>
-                <label className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider mb-1 select-none">
+                <label htmlFor="variable-scope-input" className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider mb-1 select-none">
                   Variable Scope / Description
                 </label>
                 <input
+                  id="variable-scope-input"
+                  name="variable-scope-input"
                   type="text"
                   value={settingDesc}
                   onChange={e => setSettingDesc(e.target.value)}
@@ -891,9 +990,11 @@ export default function HierarchicalSettings({
                     </p>
                     
                     <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Worksheet Password</label>
+                      <label htmlFor="export-password-input" className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Worksheet Password</label>
                       <div className="relative flex items-center">
                         <input
+                          id="export-password-input"
+                          name="export-password"
                           type={showPassword ? "text" : "password"}
                           value={dialogPassword}
                           onChange={e => setDialogPassword(e.target.value)}
@@ -955,9 +1056,11 @@ export default function HierarchicalSettings({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Worksheet Password</label>
+                      <label htmlFor="import-password-input" className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Worksheet Password</label>
                       <div className="relative flex items-center">
                         <input
+                          id="import-password-input"
+                          name="import-password"
                           type={showPassword ? "text" : "password"}
                           value={dialogPassword}
                           onChange={e => setDialogPassword(e.target.value)}

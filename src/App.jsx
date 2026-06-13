@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, useTransition } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bar, Doughnut, Line, Pie, Radar, PolarArea } from 'react-chartjs-2';
 import html2canvas from 'html2canvas';
-import * as XLSX from 'xlsx';
 import SafeIcon from './components/SafeIcon';
-import { parseExcelFile } from './utils/excelParser';
-import { buildChartOptions, chartComponents, colorPalettes, getCategoryIcon, iconMappings, searchIcons } from './utils/chartConfigs';
+import { parseExcelFile, exportExcelData, exportCsvData } from './utils/excelWorkerClient';
+import { buildChartOptions, getCategoryIcon, iconMappings, searchIcons } from './utils/chartConfigs';
 import { useResizeObserver } from './hooks/useResizeObserver';
+import { useDebounce } from './hooks/useDebounce';
+import SkeletonLoader from './components/SkeletonLoader';
 
 // Import sub-components
 import DataManagement from './components/Sidebar/sections/DataManagement';
@@ -17,10 +18,12 @@ import IconFiltering from './components/Sidebar/sections/IconFiltering';
 import AdvancedFilters from './components/Sidebar/sections/AdvancedFilters';
 import ChartHeader from './components/ChartArea/ChartHeader';
 import MetricsGrid from './components/ChartArea/MetricsGrid';
-import ChartGallery from './components/ChartGallery';
 import DynamicIcon from './components/DynamicIcon';
+
+// Lazy load ChartGallery
+const ChartGallery = lazy(() => import('./components/ChartGallery'));
 import HierarchicalSettings from './components/HierarchicalSettings';
-import ChartEngine from './components/ChartEngine';
+const ChartEngine = lazy(() => import('./components/ChartEngine'));
 import {
   detectColumnType,
   flattenMultipleChoice,
@@ -28,19 +31,12 @@ import {
   getUniqueChoices
 } from './utils/smartDetector';
 import {
-  getDesignSettings,
   saveActiveSelection,
   saveChartConfig,
   saveChartVisuals
 } from './services/SettingsService';
 import { setDesignSettings } from './services/SettingsService';
 
-const colorClasses = {
-  indigo: 'bg-indigo-50 text-indigo-600',
-  emerald: 'bg-emerald-50 text-emerald-600',
-  amber: 'bg-amber-50 text-amber-600',
-  rose: 'bg-rose-50 text-rose-600'
-};
 
 const chartMap = {
   bar: Bar,
@@ -100,12 +96,13 @@ const defaultVisuals = {
   showLegend: true,
   glassBlur: 24,
   glassOpacity: 0.7,
-  labelMaxLength: 20,
+  legendLabelMaxLength: 20,
+  xAxisLabelMaxLength: 0,
   chartHeight: 600,
   iconSize: 16,
   iconContainerSize: 42,
   iconContainerOpacity: 0.95,
-  iconColor: '#64748b',
+  iconColor: '',
   iconOpacity: 1.0,
   iconOffset: 0,
 
@@ -117,10 +114,17 @@ const defaultVisuals = {
   dataLabelFontSize: 11,
   xAxisTitleFontSize: 12,
   yAxisTitleFontSize: 12,
+  yAxisMax: null,
   legendPosition: 'top',
   legendWidth: 50,
   chartOrientation: 'v',
   showAxisTicks: true,
+  compactXAxisLabels: false,
+  // New: when true, force all X-axis labels to display (disables autoSkip)
+  showAllXAxisLabels: false,
+  // New: when true, apply the `xAxisLabelMaxLength` truncation even when compact mode is not enabled
+  applyXAxisCharLimit: false,
+  xAxisLabelWrapLength: 0,
   tooltipMode: 'hover'
 };
 
@@ -131,6 +135,19 @@ const hexToRgba = (hex, alpha) => {
   const g = (num >> 8) & 255;
   const b = num & 255;
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const disposeCanvas = (canvas) => {
+  if (!canvas) return;
+  try {
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  } catch (e) {
+    // ignore cleanup errors
+  }
+  canvas.width = 0;
+  canvas.height = 0;
+  if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
 };
 
 const App = () => {
@@ -158,9 +175,13 @@ const App = () => {
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedDesign, setSelectedDesign] = useState('');
   const [chartFadeKey, setChartFadeKey] = useState(Date.now());
+  const triggerChartFade = useCallback(() => {
+    setChartFadeKey(Date.now());
+  }, []);
   const [isBusy, setIsBusy] = useState(false);
   const [expandedLayer, setExpandedLayer] = useState(1);
   const [isExportingImage, setIsExportingImage] = useState(false);
+  const [isMemoryOnly, setIsMemoryOnly] = useState(false);
   const [customIcons, setCustomIcons] = useState({});
   const [filters, setFilters] = useState([]); // This controls X-axis visibility specifically
   const [advancedFilters, setAdvancedFilters] = useState({}); // New: { [column]: { excluded: [...] } }
@@ -169,10 +190,120 @@ const App = () => {
   const [showIconModal, setShowIconModal] = useState(false);
   const [selectedLabelForIcon, setSelectedLabelForIcon] = useState('');
   const [selectedIconName, setSelectedIconName] = useState('');
+  const [iconSearchInput, setIconSearchInput] = useState('');
+  const [, startTransition] = useTransition();
+  const debouncedIconSearch = useDebounce(iconSearchInput, 250);
+  const logoUrl = `${import.meta.env.BASE_URL || '/'}LOGO.png`;
+
+  // High-Res Image Export Engine Configurations
+  const [exportScale, setExportScale] = useState(5); // Default to 5x density as requested
+  const [exportTransparent, setExportTransparent] = useState(false);
+  const [exportAspectRatio, setExportAspectRatio] = useState('free');
+  const [exportWatermark, setExportWatermark] = useState(true);
+  const [exportCustomTitle, setExportCustomTitle] = useState('');
+  const [exportTimestamp, setExportTimestamp] = useState(false);
+
+  const getHighResExportScale = () => Number(exportScale) || 5;
+
+  const disableClonedAnimations = (clonedDoc) => {
+    const allElements = clonedDoc.querySelectorAll('*');
+    allElements.forEach((el) => {
+      if (el && el.style) {
+        el.style.transition = 'none';
+        el.style.animation = 'none';
+        el.style.webkitTransition = 'none';
+        el.style.webkitAnimation = 'none';
+      }
+    });
+
+    // Inject a stylesheet into the cloned document to forcibly disable transitions/animations
+    try {
+      const style = clonedDoc.createElement('style');
+      style.setAttribute('data-export-freeze', 'true');
+      style.innerHTML = `* { transition: none !important; animation: none !important; -webkit-transition: none !important; -webkit-animation: none !important; }`;
+      (clonedDoc.head || clonedDoc.body || clonedDoc.documentElement).appendChild(style);
+    } catch (e) {
+      // ignore injection failures
+    }
+  };
+
+  const replaceClonedSvgs = (clonedDoc) => {
+    const svgs = clonedDoc.querySelectorAll('svg');
+    svgs.forEach((svg) => {
+      try {
+        let width = 16;
+        let height = 16;
+
+        if (svg.id) {
+          const realSvg = document.getElementById(svg.id);
+          if (realSvg) {
+            const rect = realSvg.getBoundingClientRect();
+            width = rect.width || realSvg.clientWidth || 16;
+            height = rect.height || realSvg.clientHeight || 16;
+          }
+        }
+
+        if (width === 16 && height === 16) {
+          const parent = svg.parentNode;
+          if (parent && parent instanceof window.HTMLElement) {
+            const pW = parseFloat(parent.style.width);
+            const pH = parseFloat(parent.style.height);
+            if (pW) width = pW;
+            if (pH) height = pH;
+          }
+        }
+
+        const attrW = svg.getAttribute('width');
+        const attrH = svg.getAttribute('height');
+        if (attrW) {
+          const parsed = parseFloat(attrW);
+          if (parsed) width = parsed;
+        }
+        if (attrH) {
+          const parsed = parseFloat(attrH);
+          if (parsed) height = parsed;
+        }
+
+        svg.setAttribute('width', String(width));
+        svg.setAttribute('height', String(height));
+
+        const xml = new XMLSerializer().serializeToString(svg);
+        const dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.width = width;
+        img.height = height;
+        img.style.cssText = svg.style.cssText;
+        img.className = svg.className.baseVal || svg.className || '';
+        svg.parentNode.replaceChild(img, svg);
+      } catch (e) {
+        svg.style.visibility = 'visible';
+      }
+    });
+  };
+
+  const createBufferCanvasPng = (sourceCanvas) => {
+    let buffer = document.createElement('canvas');
+    buffer.width = sourceCanvas.width;
+    buffer.height = sourceCanvas.height;
+    const bufferCtx = buffer.getContext('2d', { willReadFrequently: true });
+    if (bufferCtx) {
+      bufferCtx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height);
+    }
+    const dataUrl = buffer.toDataURL('image/png', 1.0);
+    disposeCanvas(buffer);
+    return dataUrl;
+  };
+
+  useEffect(() => {
+    if (selectedIconName.startsWith('data:')) {
+      setIconSearchInput('');
+    } else {
+      setIconSearchInput(selectedIconName);
+    }
+  }, [selectedIconName]);
   const [iconLibrary, setIconLibrary] = useState('standard');
-  const [showIconSuggestions, setShowIconSuggestions] = useState(false);
   const [legendAliases, setLegendAliases] = useState({});
-  const [editingLabel, setEditingLabel] = useState(null);
   const [editingLegend, setEditingLegend] = useState(null);
   const [columnAliases, setColumnAliases] = useState({});
   const [editingCol, setEditingCol] = useState(null);
@@ -215,9 +346,7 @@ const App = () => {
     // Apply Zod schema validation to confirm flattening integrity
     try {
       const zodValidation = validateFlattenedData(flattenedRows, selectMultipleCols, uniqueChoicesMap);
-      if (zodValidation.success) {
-        console.log('[Smart Detector/Zod] Flattened dataset succeeded Zod integrity validation.');
-      } else {
+      if (!zodValidation.success) {
         console.warn('[Smart Detector/Zod] Zod integrity validation issues detected:', zodValidation.error);
       }
     } catch (err) {
@@ -349,8 +478,21 @@ const App = () => {
 
     try {
       const storedData = localStorage.getItem('meal_data');
-      if (storedData) setData(JSON.parse(storedData));
-    } catch (e) { console.error('Failed to load data:', e); }
+      if (storedData) {
+        const parsed = JSON.parse(storedData);
+        if (Array.isArray(parsed) && parsed.length === 1 && parsed[0].__quota_exceeded) {
+          console.warn('Dataset was too large to be cached in LocalStorage.');
+          setData([]);
+          setIsMemoryOnly(true);
+        } else {
+          setData(parsed);
+          setIsMemoryOnly(false);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load data from LocalStorage:', e.message);
+      setIsMemoryOnly(true);
+    }
 
     try {
       const storedColumns = localStorage.getItem('meal_columns');
@@ -396,11 +538,23 @@ const App = () => {
 
       try {
         if (data && data.length > 0) {
-          localStorage.setItem('meal_data', JSON.stringify(data));
+          const serialized = JSON.stringify(data);
+          if (serialized.length > 4 * 1024 * 1024) {
+            console.warn('Dataset is too large for LocalStorage quota (5MB limit). Keeping in-memory but not caching.');
+            localStorage.setItem('meal_data', JSON.stringify([{ __quota_exceeded: true, length: data.length }]));
+            setIsMemoryOnly(true);
+          } else {
+            localStorage.setItem('meal_data', serialized);
+            setIsMemoryOnly(false);
+          }
         } else {
           localStorage.removeItem('meal_data');
+          setIsMemoryOnly(false);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.warn('Failed to save large dataset to LocalStorage quota:', e.message);
+        setIsMemoryOnly(true);
+      }
 
       try {
         if (columns && columns.length > 0) {
@@ -539,9 +693,6 @@ const App = () => {
     const saveState = () => {
       saveChartConfig(config);
       saveChartVisuals(visuals);
-      if (selectedProject && selectedDesign) {
-        setDesignSettings(selectedProject, selectedDesign, mergedConfigVisuals);
-      }
     };
 
     if (saveStateTimeoutRef.current) clearTimeout(saveStateTimeoutRef.current);
@@ -553,7 +704,7 @@ const App = () => {
         saveState();
       }
     };
-  }, [config, visuals, selectedProject, selectedDesign, mergedConfigVisuals]);
+  }, [config, visuals]);
 
   useEffect(() => {
     setPinnedIndices([]);
@@ -563,6 +714,10 @@ const App = () => {
     setFilters([]);
     setAdvancedFilters({});
     setCustomIcons({});
+    setLegendAliases({});
+    setColumnAliases({});
+    setSelectedProject('');
+    setSelectedDesign('');
     setConfig(defaultConfig);
     setVisuals(defaultVisuals);
     setPinnedIndices([]);
@@ -581,6 +736,11 @@ const App = () => {
 
   const chartRef = useRef(null);
   const stageRef = useRef(null);
+
+  const yieldToBrowser = useCallback(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }, []);
+
   const chartContainerRef = useResizeObserver(() => {
     if (chartRef.current) {
       chartRef.current.resize();
@@ -820,15 +980,9 @@ const App = () => {
   );
 
   const loadSheet = useCallback(
-    (loadedWorkbook, sheetName, name) => {
-      if (!loadedWorkbook || !sheetName) return;
-      const sheet = loadedWorkbook.Sheets[sheetName];
-      if (!sheet) {
-        handleError('Selected sheet could not be found.');
-        return;
-      }
-
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    (loadedSheetsData, sheetName, name) => {
+      if (!loadedSheetsData || !sheetName) return;
+      const rows = loadedSheetsData[sheetName];
       if (!Array.isArray(rows) || rows.length === 0) {
         handleError('The selected sheet is empty or invalid.');
         return;
@@ -846,13 +1000,13 @@ const App = () => {
 
     try {
       const parsed = await parseExcelFile(file);
-      setWorkbook(parsed.workbook);
+      setWorkbook(parsed.sheetsData);
       setSheetNames(parsed.sheetNames);
       setFileName(file.name);
 
       if (parsed.sheetNames.length > 0) {
         setSelectedSheet(parsed.sheetNames[0]);
-        loadSheet(parsed.workbook, parsed.sheetNames[0], file.name);
+        loadSheet(parsed.sheetsData, parsed.sheetNames[0], file.name);
       }
     } catch (error) {
       handleError(error?.message || 'Failed to load the file.');
@@ -948,8 +1102,8 @@ const App = () => {
   }, []);
 
   const filteredIconSuggestions = useMemo(() => {
-    return searchIcons(selectedIconName, iconLibrary);
-  }, [selectedIconName, iconLibrary]);
+    return searchIcons(debouncedIconSearch, iconLibrary);
+  }, [debouncedIconSearch, iconLibrary]);
 
   const aggregatedResults = useMemo(() => {
     if (!flattenedData || !flattenedData.length || !config.xAxis || !config.yAxis) return null;
@@ -1171,6 +1325,22 @@ const App = () => {
     };
   }, [aggregatedResults]);
 
+  // Initialize X Axis label max length to the longest label when not set by user
+  useEffect(() => {
+    try {
+      const labels = aggregatedResults?.labels || [];
+      if (labels && labels.length > 0) {
+        const maxLen = labels.reduce((m, l) => Math.max(m, String(l || '').length), 0);
+        setVisuals((prev) => {
+          if (prev.xAxisLabelMaxLength && prev.xAxisLabelMaxLength > 0) return prev;
+          return { ...prev, xAxisLabelMaxLength: maxLen || 20 };
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [aggregatedResults?.labels]);
+
   const isHorizontal = useMemo(() => {
     if (['horizontalBar', 'stackedHorizontalBar'].includes(config.chartType)) return true;
     if (!['bar', 'stackedBar', 'line', 'spline', 'steppedLine', 'area', 'smoothArea', 'scatter', 'combo'].includes(config.chartType)) return false;
@@ -1297,6 +1467,9 @@ const App = () => {
         // Option 1: Draw raw path dashed line
         if (config.showRawPath) {
           const ctx = chart.ctx;
+          const chartArea = chart.chartArea || { left: 0, top: 0, right: chart.width || 0, bottom: chart.height || 0 };
+          const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
           ctx.save();
           ctx.beginPath();
           ctx.setLineDash([6, 3]);
@@ -1309,8 +1482,11 @@ const App = () => {
           ctx.globalCompositeOperation = 'source-over';
 
           points.forEach((p, i) => {
-            if (i === 0) ctx.moveTo(p.px, p.py);
-            else ctx.lineTo(p.px, p.py);
+            const px = Number.isFinite(p.px) ? clamp(p.px, chartArea.left, chartArea.right) : p.px;
+            const py = Number.isFinite(p.py) ? clamp(p.py, chartArea.top, chartArea.bottom) : p.py;
+            if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
           });
 
           ctx.stroke();
@@ -1375,14 +1551,44 @@ const App = () => {
   const getCategoryColor = (labelIndex) => {
     if (chartData?.datasets && chartData.datasets.length > 0) {
       const ds = chartData.datasets[0];
-      if (ds.borderColor) {
-        if (Array.isArray(ds.borderColor)) {
-          return ds.borderColor[labelIndex] || ds.borderColor[0] || '#6366f1';
+      
+      // Determine real color: prefer borderColor for line chart types, or backgroundColor if not transparent
+      let col = null;
+      if (ds.borderColor && Array.isArray(ds.borderColor)) {
+        col = ds.borderColor[labelIndex] || ds.borderColor[0];
+      }
+      
+      if (!col && ds.backgroundColor && Array.isArray(ds.backgroundColor)) {
+        col = ds.backgroundColor[labelIndex] || ds.backgroundColor[0];
+      }
+
+      if (typeof col === 'string') {
+        if (col === 'transparent') {
+          if (ds.borderColor) {
+            if (Array.isArray(ds.borderColor)) {
+              const borderCol = ds.borderColor[labelIndex] || ds.borderColor[0];
+              if (borderCol && borderCol !== 'transparent') return borderCol;
+            } else if (typeof ds.borderColor === 'string' && ds.borderColor !== 'transparent') {
+              return ds.borderColor;
+            }
+          }
+          return visuals.primaryColor || '#6366f1';
         }
-        return ds.borderColor || '#6366f1';
+        if (col.startsWith('#') && col.length === 9) {
+          return col.slice(0, 7);
+        }
+        return col;
+      }
+
+      const fallback = ds.borderColor || ds.backgroundColor;
+      if (typeof fallback === 'string' && fallback !== 'transparent') {
+        if (fallback.startsWith('#') && fallback.length === 9) {
+          return fallback.slice(0, 7);
+        }
+        return fallback;
       }
     }
-    return '#6366f1';
+    return visuals.primaryColor || '#6366f1';
   };
 
   // Plugin to catch chart area and category positions for alignment
@@ -1611,6 +1817,8 @@ const App = () => {
     setIsBusy(true);
     setIsExportingImage(true);
 
+    await yieldToBrowser();
+
     const projClean = (selectedProject || 'MEAL').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     const chartTypeClean = (config.chartType || 'Chart').trim();
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1628,32 +1836,113 @@ const App = () => {
       const originalPadding = el.style.padding;
       const originalBg = el.style.backgroundColor;
       const originalOverflow = el.style.overflow;
+      const originalWidth = el.style.width;
+      const originalHeight = el.style.height;
+      const originalFlex = el.style.flex;
+      const originalMaxW = el.style.maxWidth;
+      const originalMaxH = el.style.maxHeight;
+
+      let canvas = null;
 
       try {
         el.style.padding = '40px';
-        el.style.backgroundColor = '#ffffff';
+        el.style.backgroundColor = exportTransparent ? 'transparent' : '#ffffff';
         el.style.overflow = 'visible';
 
-        const canvas = await html2canvas(el, {
-          backgroundColor: '#ffffff',
+        // Apply Aspect Ratio Overrides
+        if (exportAspectRatio !== 'free') {
+          const widthVal = el.getBoundingClientRect().width || 800;
+          el.style.flex = 'none';
+          el.style.maxWidth = 'none';
+          el.style.maxHeight = 'none';
+          el.style.width = `${widthVal}px`;
+          if (exportAspectRatio === '16_9') {
+            el.style.height = `${widthVal * (9 / 16)}px`;
+          } else if (exportAspectRatio === '4_3') {
+            el.style.height = `${widthVal * (3 / 4)}px`;
+          } else if (exportAspectRatio === '1_1') {
+            el.style.height = `${widthVal}px`;
+          }
+        }
+
+        await document.fonts.ready;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        canvas = await html2canvas(el, {
+          backgroundColor: exportTransparent ? null : '#ffffff',
           useCORS: true,
-          allowTaint: false,
-          imageTimeout: 15000,
-          scale: 3, // Super-crisp 3x scaling for high-DPI outputs in reports/presentation
+          allowTaint: true,
+          imageTimeout: 15500,
+          scale: getHighResExportScale(),
           logging: false,
           onclone: (clonedDoc) => {
-            const icons = clonedDoc.querySelectorAll('svg');
-            icons.forEach(svg => {
-              svg.style.visibility = 'visible';
-            });
+            disableClonedAnimations(clonedDoc);
+            replaceClonedSvgs(clonedDoc);
             const container = clonedDoc.querySelector('.stage-area');
             if (container) {
               container.style.height = 'auto';
               container.style.minHeight = 'none';
               container.style.maxHeight = 'none';
               container.style.padding = '40px';
-              container.style.backgroundColor = '#ffffff';
+              container.style.backgroundColor = exportTransparent ? 'transparent' : '#ffffff';
               container.style.overflow = 'visible'; // Ensure beautiful dynamic badge outlines are not trimmed
+
+              // Embed Custom Title
+              if (exportCustomTitle && exportCustomTitle.trim() !== '') {
+                const headerDiv = clonedDoc.createElement('div');
+                headerDiv.style.width = '100%';
+                headerDiv.style.textAlign = 'center';
+                headerDiv.style.marginBottom = '20px';
+                headerDiv.style.fontFamily = '"Inter", sans-serif';
+                headerDiv.style.paddingBottom = '10px';
+                headerDiv.style.borderBottom = '1px solid ' + (exportTransparent ? 'rgba(255,255,255,0.1)' : '#f1f5f9');
+                
+                const titleNode = clonedDoc.createElement('h1');
+                titleNode.innerText = exportCustomTitle;
+                titleNode.style.fontSize = '24px';
+                titleNode.style.fontWeight = '900';
+                titleNode.style.color = exportTransparent ? '#f8fafc' : '#0f172a';
+                titleNode.style.margin = '0';
+                headerDiv.appendChild(titleNode);
+                
+                container.insertBefore(headerDiv, container.firstChild);
+              }
+
+              // Emit Watermark or Timestamp in Footer
+              if (exportWatermark || exportTimestamp) {
+                const footerDiv = clonedDoc.createElement('div');
+                footerDiv.style.width = '100%';
+                footerDiv.style.textAlign = 'center';
+                footerDiv.style.marginTop = '24px';
+                footerDiv.style.paddingTop = '12px';
+                footerDiv.style.borderTop = '1px solid ' + (exportTransparent ? 'rgba(255,255,255,0.1)' : '#f1f5f9');
+                footerDiv.style.fontFamily = '"Inter", sans-serif';
+                footerDiv.style.display = 'flex';
+                footerDiv.style.flexDirection = 'column';
+                footerDiv.style.gap = '4px';
+
+                if (exportWatermark) {
+                  const watermarkNode = clonedDoc.createElement('div');
+                  watermarkNode.innerText = 'Exported with High-Res Scheme Engine';
+                  watermarkNode.style.fontSize = '10px';
+                  watermarkNode.style.fontWeight = '850';
+                  watermarkNode.style.letterSpacing = '0.05em';
+                  watermarkNode.style.textTransform = 'uppercase';
+                  watermarkNode.style.color = exportTransparent ? '#94a3b8' : '#64748b';
+                  footerDiv.appendChild(watermarkNode);
+                }
+
+                if (exportTimestamp) {
+                  const stampNode = clonedDoc.createElement('div');
+                  stampNode.innerText = new Date().toLocaleString();
+                  stampNode.style.fontSize = '9px';
+                  stampNode.style.fontWeight = '600';
+                  stampNode.style.color = exportTransparent ? '#64748b' : '#94a3b8';
+                  footerDiv.appendChild(stampNode);
+                }
+
+                container.appendChild(footerDiv);
+              }
             }
           }
         });
@@ -1667,9 +1956,17 @@ const App = () => {
         console.error('Export PNG failed:', error);
         handleError('Failed to export PNG. Please try again.');
       } finally {
+        if (canvas) {
+          disposeCanvas(canvas);
+        }
         el.style.padding = originalPadding;
         el.style.backgroundColor = originalBg;
         el.style.overflow = originalOverflow;
+        el.style.width = originalWidth;
+        el.style.height = originalHeight;
+        el.style.flex = originalFlex;
+        el.style.maxWidth = originalMaxW;
+        el.style.maxHeight = originalMaxH;
         setIsBusy(false);
         setIsExportingImage(false);
       }
@@ -1680,8 +1977,12 @@ const App = () => {
         if (!chart) {
           throw new Error('Chart reference is not available');
         }
-        
-        const imageUrl = chart.toBase64Image ? chart.toBase64Image() : (chart.canvas ? chart.canvas.toDataURL('image/png') : null);
+
+        let imageUrl = chart.toBase64Image ? chart.toBase64Image() : null;
+        if (!imageUrl && chart.canvas) {
+          imageUrl = createBufferCanvasPng(chart.canvas);
+        }
+
         if (!imageUrl) {
           throw new Error('Could not generate image from chart canvas');
         }
@@ -1698,15 +1999,16 @@ const App = () => {
         setIsExportingImage(false);
       }
     }
-  }, [stageRef, chartRef, handleError, visuals.showIcons, selectedProject, config.chartType]);
+  }, [stageRef, chartRef, handleError, visuals.showIcons, selectedProject, config.chartType, exportScale, exportTransparent, exportAspectRatio, exportWatermark, exportCustomTitle, exportTimestamp]);
 
-  const exportChartDataExcel = useCallback(() => {
+  const exportChartDataExcel = useCallback(async () => {
     if (!aggregatedResults || !aggregatedResults.labels || !aggregatedResults.labels.length) {
       handleError('No aggregated data available to export.');
       return;
     }
 
     try {
+      setIsBusy(true);
       const projClean = (selectedProject || 'MEAL').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `${projClean}_chart_analytics_${new Date().toISOString().replace(/[:.]/g, '-')}.xlsx`;
 
@@ -1723,23 +2025,29 @@ const App = () => {
         return rowObj;
       });
 
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Chart Analytics');
-      XLSX.writeFile(workbook, filename);
+      const blob = await exportExcelData(rows, 'Chart Analytics');
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     } catch (error) {
       console.error('Code export Excel failed:', error);
       handleError('Failed to export data to Excel.');
+    } finally {
+      setIsBusy(false);
     }
   }, [aggregatedResults, selectedProject, config.xAxis, config.yAxis, handleError]);
 
-  const exportChartDataCSV = useCallback(() => {
+  const exportChartDataCSV = useCallback(async () => {
     if (!aggregatedResults || !aggregatedResults.labels || !aggregatedResults.labels.length) {
       handleError('No aggregated data available to export.');
       return;
     }
 
     try {
+      setIsBusy(true);
       const projClean = (selectedProject || 'MEAL').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `${projClean}_chart_analytics_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
 
@@ -1756,10 +2064,8 @@ const App = () => {
         return rowObj;
       });
 
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+      const blob = await exportCsvData(rows, 'Chart Analytics');
       
-      const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = window.URL.createObjectURL(blob);
       link.setAttribute('download', filename);
@@ -1769,10 +2075,12 @@ const App = () => {
     } catch (error) {
       console.error('Code export CSV failed:', error);
       handleError('Failed to export data to CSV.');
+    } finally {
+      setIsBusy(false);
     }
   }, [aggregatedResults, selectedProject, config.xAxis, config.yAxis, handleError]);
 
-  const exportFilteredDataExcel = useCallback(() => {
+  const exportFilteredDataExcel = useCallback(async () => {
     if (!flattenedData || !flattenedData.length) {
       handleError('No data available to export.');
       return;
@@ -1809,13 +2117,18 @@ const App = () => {
         return;
       }
 
-      const worksheet = XLSX.utils.json_to_sheet(finalRows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Sample Outputs');
-      XLSX.writeFile(workbook, filename);
+      const blob = await exportExcelData(finalRows, 'Sample Outputs');
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     } catch (error) {
       console.error('Code export full samples failed:', error);
       handleError('Failed to export files to Excel.');
+    } finally {
+      setIsBusy(false);
     }
   }, [flattenedData, advancedFilters, selectedMultipleChoices, config.xAxis, config.groupBy, columnTypes, uniqueChoicesMap, selectedProject, handleError]);
 
@@ -1823,31 +2136,29 @@ const App = () => {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100 text-slate-900">
-      <div
+                <motion.div
         className={`sidebar-backdrop fixed inset-0 bg-black/50 z-[9999] lg:hidden ${sidebarOpen ? 'open' : ''}`}
         onClick={() => setSidebarOpen(false)}
       />
+      <aside className={`sidebar-mobile fixed inset-y-0 left-0 z-[10001] w-full max-w-[420px] overflow-y-auto bg-white shadow-2xl lg:static lg:translate-x-0 lg:w-[420px] lg:shadow-none ${sidebarOpen ? 'open' : ''}`}>
       {isBusy && (
         <div className="fixed inset-0 z-[20000] flex items-center justify-center bg-slate-950/30 backdrop-blur-sm pointer-events-auto">
           <div className="rounded-3xl bg-white/95 border border-slate-200 p-5 shadow-2xl text-slate-900 flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.2em]">
-            <span className="h-3 w-3 rounded-full bg-indigo-600 animate-pulse" />
-            Processing… please wait
+            <span className="h-4 w-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            <span>Processing...</span>
           </div>
         </div>
       )}
 
-      <aside className={`sidebar-mobile fixed lg:relative z-[10000] h-full w-96 glass-panel border-l border-slate-200 shadow-2xl flex flex-col overflow-y-auto lg:translate-x-0 ${sidebarOpen ? 'open' : ''}`}>
-        <div className="p-4 lg:p-6 border-b border-slate-100 flex items-center gap-3 bg-white">
-          <div className="bg-white p-1 rounded-xl shadow-md border border-slate-100">
-            <img src="/LOGO.png" alt="MEAL Center" className="w-10 h-10 object-contain" />
-          </div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900 leading-tight">MEAL Studio</h1>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">V21</p>
-          </div>
-        </div>
-
         <div className="p-4 lg:p-6 space-y-4 flex-1">
+          {/* Logo Header */}
+          <div className="flex items-center gap-3.5 pb-4 border-b border-slate-100 mb-2">
+            <img src={logoUrl} alt="Logo" className="h-10 w-auto object-contain" />
+            <div>
+              <h2 className="text-xs font-black text-slate-800 tracking-wider uppercase leading-none mb-1">MC Pro Analytics Studio</h2>
+              <p className="text-[9px] font-bold text-slate-400 leading-tight">V25</p>
+            </div>
+          </div>
           {appError && (
             <div className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-start gap-3 error-shake">
               <SafeIcon name="AlertTriangle" size={18} className="text-red-500" />
@@ -1891,13 +2202,16 @@ const App = () => {
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   className="overflow-hidden space-y-4"
                 >
-                  <DataManagement
-                    fileName={fileName}
-                    sheetNames={sheetNames}
-                    selectedSheet={selectedSheet}
-                    onUpload={loadFile}
-                    onSelectSheet={(sheet) => loadSheet(workbook, sheet, fileName)}
-                  />
+                  <Suspense fallback={<SkeletonLoader />}>
+                    <DataManagement
+                      fileName={fileName}
+                      sheetNames={sheetNames}
+                      selectedSheet={selectedSheet}
+                      onUpload={loadFile}
+                      onSelectSheet={(sheet) => loadSheet(workbook, sheet, fileName)}
+                      isMemoryOnly={isMemoryOnly}
+                    />
+                  </Suspense>
 
                   <div className="rounded-3xl bg-white p-4 border border-slate-100 shadow-sm">
                     <HierarchicalSettings
@@ -1905,6 +2219,12 @@ const App = () => {
                       selectedDesign={selectedDesign}
                       onChangeProject={setSelectedProject}
                       onChangeDesign={setSelectedDesign}
+                      config={config}
+                      visuals={visuals}
+                      onSetConfigAndVisuals={(newConfig, newVisuals) => {
+                        if (newConfig) setConfig(newConfig);
+                        if (newVisuals) setVisuals(newVisuals);
+                      }}
                     />
                   </div>
 
@@ -2061,22 +2381,24 @@ const App = () => {
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   className="overflow-hidden space-y-6"
                 >
-                  <StatisticalOperations
-                    aggFunc={config.aggFunc}
-                    showPercentage={config.showPercentage}
-                    config={config}
-                    onSetConfig={setConfig}
-                    onSetAggFunc={(func) => setConfig((p) => ({ ...p, aggFunc: func }))}
-                    onTogglePercentage={() => setConfig((p) => ({ ...p, showPercentage: !p.showPercentage }))}
-                    columnTypes={columnTypes}
-                  />
+                  <Suspense fallback={<SkeletonLoader />}>
+                    <StatisticalOperations
+                      aggFunc={config.aggFunc}
+                      showPercentage={config.showPercentage}
+                      config={config}
+                      onSetConfig={setConfig}
+                      onSetAggFunc={(func) => setConfig((p) => ({ ...p, aggFunc: func }))}
+                      onTogglePercentage={() => setConfig((p) => ({ ...p, showPercentage: !p.showPercentage }))}
+                      columnTypes={columnTypes}
+                    />
 
-                  <AdvancedFilters
-                    data={data}
-                    columns={columns}
-                    advancedFilters={advancedFilters}
-                    onToggleValue={toggleAdvancedFilterValue}
-                  />
+                    <AdvancedFilters
+                      data={data}
+                      columns={columns}
+                      advancedFilters={advancedFilters}
+                      onToggleValue={toggleAdvancedFilterValue}
+                    />
+                  </Suspense>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -2140,8 +2462,10 @@ const App = () => {
                         { label: 'Y Axis Label', field: 'yAxisLabel' }
                       ].map(({ label, field }) => (
                         <div key={field}>
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{label}</label>
+                          <label htmlFor={`config-${field}`} className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{label}</label>
                           <input
+                            id={`config-${field}`}
+                            name={`config-${field}`}
                             type="text"
                             value={config[field]}
                             onChange={(e) => setConfig((p) => ({ ...p, [field]: e.target.value }))}
@@ -2151,38 +2475,74 @@ const App = () => {
                         </div>
                       ))}
                       <div>
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-tight flex items-center gap-2">
-                          <SafeIcon name="Scissors" size={12} /> Label Character Limit
+                        <label htmlFor="legendLabelMaxLength" className="text-[10px] font-black text-slate-500 uppercase tracking-tight flex items-center gap-2">
+                          <SafeIcon name="Scissors" size={12} /> Legend Character Limit
                         </label>
                         <input
+                          id="legendLabelMaxLength"
+                          name="legendLabelMaxLength"
                           type="number"
                           min="5" max="100"
-                          value={visuals.labelMaxLength || 20}
-                          onChange={(e) => setVisuals((p) => ({ ...p, labelMaxLength: parseInt(e.target.value) || 20 }))}
+                          value={visuals.legendLabelMaxLength || 20}
+                          onChange={(e) => setVisuals((p) => ({ ...p, legendLabelMaxLength: parseInt(e.target.value) || 20 }))}
                           className="w-full p-3 mt-1 rounded-2xl border border-slate-200 bg-slate-50/50 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all text-slate-850"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="xAxisLabelMaxLength" className="text-[10px] font-black text-slate-500 uppercase tracking-tight flex items-center gap-2">
+                          <SafeIcon name="Scissors" size={12} /> X Axis Character Limit
+                        </label>
+                        <input
+                          id="xAxisLabelMaxLength"
+                          name="xAxisLabelMaxLength"
+                          type="number"
+                          min="3" max="200"
+                          value={visuals.xAxisLabelMaxLength || 20}
+                          onChange={(e) => setVisuals((p) => ({
+                            ...p,
+                            xAxisLabelMaxLength: parseInt(e.target.value) || 20,
+                            xAxisLabelWrapLength: p.xAxisLabelWrapLength > (parseInt(e.target.value) || 20) ? (parseInt(e.target.value) || 20) : p.xAxisLabelWrapLength
+                          }))}
+                          className="w-full p-3 mt-1 rounded-2xl border border-slate-200 bg-slate-50/50 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all text-slate-850"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="xAxisLabelWrapLength" className="text-[10px] font-black text-slate-500 uppercase tracking-tight flex items-center gap-2">
+                          <SafeIcon name="Type" size={12} /> X Axis Wrap Length
+                        </label>
+                        <input
+                          id="xAxisLabelWrapLength"
+                          name="xAxisLabelWrapLength"
+                          type="number"
+                          min="0" max={visuals.xAxisLabelMaxLength || 200}
+                          value={visuals.xAxisLabelWrapLength || ''}
+                          onChange={(e) => setVisuals((p) => ({ ...p, xAxisLabelWrapLength: parseInt(e.target.value) >= 0 ? parseInt(e.target.value) : 0 }))}
+                          className="w-full p-3 mt-1 rounded-2xl border border-slate-200 bg-slate-50/50 text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all text-slate-850"
+                          placeholder="0 = off"
                         />
                       </div>
                     </div>
                   </section>
 
-                  <VisualCustomization
-                    visuals={visuals}
-                    config={config}
-                    aggregatedResults={aggregatedResults}
-                    onSetVisuals={setVisuals}
-                    onSetConfig={setConfig}
-                    pinnedIndices={pinnedIndices}
-                    onClearPinnedIndices={() => setPinnedIndices([])}
-                    onPickGlobalIcon={() => {
-                      setSelectedLabelForIcon('_global_');
-                      setSelectedIconName(config.globalIcon || '');
-                      setShowIconModal(true);
-                    }}
-                  />
+                  <Suspense fallback={<SkeletonLoader />}>
+                    <VisualCustomization
+                      visuals={visuals}
+                      config={config}
+                      aggregatedResults={aggregatedResults}
+                      onSetVisuals={setVisuals}
+                      onSetConfig={setConfig}
+                      pinnedIndices={pinnedIndices}
+                      onClearPinnedIndices={() => setPinnedIndices([])}
+                      onPickGlobalIcon={() => {
+                        setSelectedLabelForIcon('_global_');
+                        setSelectedIconName(config.globalIcon || '');
+                        setShowIconModal(true);
+                      }}
+                    />
 
-                  <IconFiltering
-                    filters={filters}
-                    customIcons={customIcons}
+                    <IconFiltering
+                      filters={filters}
+                      customIcons={customIcons}
                     activeIconTarget={activeIconTarget}
                     isEditingIcons={isEditingIcons}
                     selectedIconName={selectedIconName}
@@ -2221,80 +2581,241 @@ const App = () => {
                     onSetVisuals={setVisuals}
                     getCategoryIconWithPreference={getCategoryIconWithPreference}
                   />
+                  </Suspense>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
 
-          {/* PERSISTENT HIGH-RES EXPORT SECTION AT THE BOTTOM OF SIDEBAR */}
-          {data.length > 0 && (
-            <div className="pt-4 border-t border-slate-100 space-y-3">
-              <div className="flex items-center gap-2 px-1 mb-1">
-                <SafeIcon name="DownloadCloud" size={13} className="text-slate-400" />
-                <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">Export Center</span>
+          {/* LAYER 05: EXPORT & OUTPUTS DECK */}
+          <div className={`layer-container border transition-all duration-300 rounded-[2.5rem] p-4 ${expandedLayer === 5 ? 'bg-indigo-50/5 border-indigo-200 shadow-sm' : 'bg-white border-slate-100'} ${data.length === 0 ? 'opacity-60 cursor-not-allowed select-none bg-slate-50/10' : ''}`}>
+            <button
+              type="button"
+              disabled={data.length === 0}
+              onClick={() => {
+                if (data.length > 0) {
+                  setExpandedLayer(expandedLayer === 5 ? null : 5);
+                }
+              }}
+              className="w-full flex items-center justify-between text-left select-none outline-none group"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-2xl shrink-0 border transition-all ${expandedLayer === 5 ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>
+                  {data.length === 0 ? <SafeIcon name="Lock" size={16} className="text-slate-400" /> : <SafeIcon name="DownloadCloud" size={16} />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black text-indigo-600/80 bg-indigo-50/40 px-1.5 py-0.5 rounded-md uppercase tracking-wide">Layer 05</span>
+                    {data.length > 0 && <span className="text-[8px] bg-emerald-50 text-emerald-600 px-1.5 py-0.2 rounded-full font-black">ACTIVE</span>}
+                  </div>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Export & Outputs Deck
+                  </h3>
+                  <p className="text-[9px] font-bold text-slate-400">Export high-res charts, CSV, and formatted reports</p>
+                </div>
               </div>
-              
-              <button
-                type="button"
-                onClick={exportPNG}
-                disabled={isBusy || isExportingImage}
-                className="w-full py-3.5 bg-slate-900 leading-none text-white rounded-2xl text-[11px] font-black flex items-center justify-center gap-2.5 hover:bg-black transition-all shadow-xl shadow-slate-200/80 hover:shadow-2xl hover:scale-[1.01] active:scale-95 duration-200"
-              >
-                <SafeIcon name="Image" size={14} className="text-white shrink-0 animate-pulse" />
-                <span className="uppercase tracking-widest text-[9px] font-extrabold">Export High-Res Image</span>
-              </button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={exportChartDataExcel}
-                  disabled={isBusy}
-                  className="py-3 bg-white border border-slate-100 text-slate-700 rounded-2xl text-[10px] font-bold flex items-center justify-center gap-1.5 hover:bg-slate-50 transition-all shadow-sm hover:shadow active:scale-95 duration-200"
-                >
-                  <SafeIcon name="FileSpreadsheet" size={13} className="text-emerald-600 shrink-0" />
-                  <span className="uppercase tracking-wider text-[8px] font-black">Excel Chart</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={exportChartDataCSV}
-                  disabled={isBusy}
-                  className="py-3 bg-white border border-slate-100 text-slate-700 rounded-2xl text-[10px] font-bold flex items-center justify-center gap-1.5 hover:bg-slate-50 transition-all shadow-sm hover:shadow active:scale-95 duration-200"
-                >
-                  <SafeIcon name="FileText" size={13} className="text-indigo-600 shrink-0" />
-                  <span className="uppercase tracking-wider text-[8px] font-black">CSV Chart</span>
-                </button>
+              <div className="flex items-center gap-2">
+                {data.length === 0 ? (
+                  <span className="text-[8px] bg-slate-100 text-slate-400 border border-slate-200 px-1.5 py-0.5 rounded-full font-extrabold uppercase">LOCKED</span>
+                ) : (
+                  <div className={`p-1.5 text-slate-400 transition-transform duration-300 ${expandedLayer === 5 ? 'rotate-180 text-indigo-500' : ''}`}>
+                    <SafeIcon name="ChevronDown" size={16} />
+                  </div>
+                )}
               </div>
+            </button>
 
-              <button
-                type="button"
-                onClick={exportFilteredDataExcel}
-                disabled={isBusy}
-                className="w-full py-3 bg-indigo-50/50 border border-indigo-100/50 text-indigo-700 rounded-2xl text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-sm active:scale-95 duration-200"
-              >
-                <SafeIcon name="Database" size={13} className="text-indigo-600 shrink-0" />
-                <span className="uppercase tracking-wider text-[8px] font-black">Export Filtered Data (Excel)</span>
-              </button>
-            </div>
-          )}
+            <AnimatePresence>
+              {data.length > 0 && expandedLayer === 5 && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                  animate={{ height: 'auto', opacity: 1, marginTop: 16 }}
+                  exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="overflow-hidden space-y-4"
+                >
+                  {/* Premium Export Configurations Panel */}
+                  <div className="bg-slate-50/50 rounded-2xl p-3.5 border border-slate-100 space-y-3.5 animate-fadeIn">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest font-sans">
+                        Image Export Settings
+                      </span>
+                      <SafeIcon name="Settings" size={10} className="text-slate-400" />
+                    </div>
+
+                    {/* Resolution Multiplier */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold text-slate-500 block uppercase tracking-wider font-sans">Resolution Detail</label>
+                      <div className="grid grid-cols-4 gap-1 bg-white p-1 rounded-xl border border-slate-100 shadow-sm">
+                        {[
+                          { l: '1x Std', v: 1 },
+                          { l: '2x HD', v: 2 },
+                          { l: '4x 4K', v: 4 },
+                          { l: '5x Print', v: 5 }
+                        ].map((opt) => (
+                          <button
+                            key={opt.v}
+                            type="button"
+                            onClick={() => setExportScale(opt.v)}
+                            className={`py-1.5 text-[9px] font-black rounded-lg transition-all cursor-pointer ${
+                              exportScale === opt.v
+                                ? 'bg-slate-900 text-white shadow'
+                                : 'text-slate-400 hover:text-slate-600'
+                            }`}
+                          >
+                            {opt.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Aspect Ratio */}
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] font-bold text-slate-500 block uppercase tracking-wider font-sans">Aspect Ratio Preset</label>
+                      <div className="grid grid-cols-4 gap-1 bg-white p-1 rounded-xl border border-slate-100 shadow-sm">
+                        {[
+                          { l: 'Free', v: 'free' },
+                          { l: '16:9', v: '16_9' },
+                          { l: '4:3', v: '4_3' },
+                          { l: '1:1', v: '1_1' }
+                        ].map((opt) => (
+                          <button
+                            key={opt.v}
+                            type="button"
+                            onClick={() => setExportAspectRatio(opt.v)}
+                            className={`py-1.5 text-[9px] font-black rounded-lg transition-all cursor-pointer ${
+                              exportAspectRatio === opt.v
+                                ? 'bg-slate-900 text-white shadow'
+                                : 'text-slate-400 hover:text-slate-600'
+                            }`}
+                          >
+                            {opt.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Transparent Toggle & Watermark */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setExportTransparent(!exportTransparent)}
+                        className={`p-2.5 rounded-xl border text-[9px] font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          exportTransparent
+                            ? 'bg-indigo-50/50 border-indigo-200 text-indigo-700 shadow-sm'
+                            : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        <SafeIcon name={exportTransparent ? 'EyeOff' : 'Eye'} size={11} />
+                        <span>Transparent</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setExportWatermark(!exportWatermark)}
+                        className={`p-2.5 rounded-xl border text-[9px] font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                          exportWatermark
+                            ? 'bg-indigo-50/50 border-indigo-200 text-indigo-700 shadow-sm'
+                            : 'bg-white border-slate-100 text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        <SafeIcon name="Stamp" size={11} />
+                        <span>Watermark</span>
+                      </button>
+                    </div>
+
+                    {/* Custom Export Title Input */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-sans">Embed Title</label>
+                        <button
+                          type="button"
+                          onClick={() => setExportTimestamp(!exportTimestamp)}
+                          className={`text-[8px] font-extrabold flex items-center gap-1 uppercase tracking-widest px-1.5 py-0.5 rounded-full border transition-all cursor-pointer ${
+                            exportTimestamp ? 'border-indigo-200 text-indigo-700 bg-indigo-50/50' : 'border-slate-150 text-slate-400'
+                          }`}
+                        >
+                          <SafeIcon name="Clock" size={8} />
+                          <span>Timestamp</span>
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={exportCustomTitle}
+                        onChange={(e) => setExportCustomTitle(e.target.value)}
+                        placeholder="Enter custom title overlay"
+                        className="w-full px-3 py-2 bg-white text-[10px] font-semibold border border-slate-150 rounded-xl outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-400 transition-all text-slate-800 font-sans"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={exportPNG}
+                    disabled={isBusy || isExportingImage}
+                    className="w-full py-3.5 bg-slate-900 leading-none text-white rounded-2xl text-[11px] font-black flex items-center justify-center gap-2.5 hover:bg-black transition-all shadow-xl shadow-slate-200/80 hover:shadow-2xl hover:scale-[1.01] active:scale-95 duration-200"
+                  >
+                    <SafeIcon name="Image" size={14} className="text-white shrink-0 animate-pulse" />
+                    <span className="uppercase tracking-widest text-[9px] font-extrabold font-sans">Export Custom Image</span>
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={exportChartDataExcel}
+                      disabled={isBusy}
+                      className="py-3 bg-white border border-slate-100 text-slate-700 rounded-2xl text-[10px] font-bold flex items-center justify-center gap-1.5 hover:bg-slate-50 transition-all shadow-sm hover:shadow active:scale-95 duration-200 cursor-pointer"
+                    >
+                      <SafeIcon name="FileSpreadsheet" size={13} className="text-emerald-600 shrink-0" />
+                      <span className="uppercase tracking-wider text-[8px] font-black font-sans">Excel Chart</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={exportChartDataCSV}
+                      disabled={isBusy}
+                      className="py-3 bg-white border border-slate-100 text-slate-700 rounded-2xl text-[10px] font-bold flex items-center justify-center gap-1.5 hover:bg-slate-50 transition-all shadow-sm hover:shadow active:scale-95 duration-200 cursor-pointer"
+                    >
+                      <SafeIcon name="FileText" size={13} className="text-indigo-600 shrink-0" />
+                      <span className="uppercase tracking-wider text-[8px] font-black font-sans">CSV Chart</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={exportFilteredDataExcel}
+                    disabled={isBusy}
+                    className="w-full py-3 bg-indigo-50/50 border border-indigo-100/50 text-indigo-700 rounded-2xl text-[10px] font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 transition-all shadow-sm active:scale-95 duration-200 cursor-pointer"
+                  >
+                    <SafeIcon name="Database" size={13} className="text-indigo-600 shrink-0" />
+                    <span className="uppercase tracking-wider text-[8px] font-black font-sans">Export Filtered Data (Excel)</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </aside>
 
-      <ChartEngine
-        selectedProject={selectedProject}
-        selectedDesign={selectedDesign}
-        onApplySettings={handleApplyDesignSettings}
-        onFade={() => setChartFadeKey(Date.now())}
-      />
+      <Suspense fallback={null}>
+        <ChartEngine
+          selectedProject={selectedProject}
+          selectedDesign={selectedDesign}
+          onApplySettings={handleApplyDesignSettings}
+          onFade={triggerChartFade}
+        />
+      </Suspense>
 
       <main className="flex-1 flex flex-col gap-4 lg:gap-6 p-2 sm:p-4 lg:p-8 relative overflow-x-hidden">
-        <ChartHeader
-          chartType={config.chartType}
-          onSetChartType={(type) => setConfig((p) => ({ ...p, chartType: type }))}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-        />
+        <Suspense fallback={null}>
+          <ChartHeader
+            chartType={config.chartType}
+            onSetChartType={(type) => setConfig((p) => ({ ...p, chartType: type }))}
+            onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          />
+        </Suspense>
 
-        {data.length > 0 && (
+        {data.length > 0 && fileName && (
           <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 lg:p-5 rounded-[2rem] border border-slate-100 shadow-sm relative z-30">
             <div className="flex items-center gap-3">
               <span className="relative flex h-3 w-3">
@@ -2306,10 +2827,10 @@ const App = () => {
                 <span className="text-[12px] font-extrabold text-slate-700 mt-1 block">Live schema mapping and intelligence are ready</span>
               </div>
             </div>
-            
+
             <button
               type="button"
-              onClick={() => setShowGallery(true)}
+              onClick={() => startTransition(() => setShowGallery(true))}
               className="px-5 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-xs font-black rounded-2xl shadow-xl shadow-indigo-100 hover:shadow-2xl transition-all duration-200 cursor-pointer flex items-center gap-2 hover:scale-[1.01] active:scale-95"
             >
               <SafeIcon name="Grid" size={14} className="animate-pulse" />
@@ -2361,7 +2882,7 @@ const App = () => {
           >
             {data.length > 0 && config.xAxis && config.yAxis ? (
               <div className="w-full h-full flex flex-col relative p-2 sm:p-4 lg:p-6" key={`${fileName}-${chartFadeKey}`}>
-                <div ref={stageRef} className="stage-area w-full h-full flex flex-col relative">
+                <div ref={stageRef} className="stage-area w-full h-auto min-h-[320px] md:h-full flex flex-col relative">
 
                   <div className="flex flex-col flex-1 h-full min-w-0">
                     {config.chartTitle && (
@@ -2421,17 +2942,17 @@ const App = () => {
                                       }}>
                                       <motion.button
                                         whileHover={{ scale: 1.15, rotate: 5 }}
-                                        className="flex items-center justify-center transition-all"
+                                        className="flex items-center justify-center transition-all animate-fadeIn font-sans"
                                         style={{
                                           width: Math.max(20, visuals.iconContainerSize * (visuals.chartHeight / 580)),
                                           height: Math.max(20, visuals.iconContainerSize * (visuals.chartHeight / 580)),
-                                          backgroundColor: parseFloat(visuals.iconContainerOpacity ?? 1) > 0 ? `rgba(255, 255, 255, ${visuals.iconContainerOpacity})` : 'transparent',
-                                          border: parseFloat(visuals.iconContainerOpacity ?? 1) > 0 ? `2px solid ${hexToRgba(middleColor, parseFloat(visuals.iconContainerOpacity))}` : 'none',
-                                          borderRadius: '50%',
-                                          boxShadow: parseFloat(visuals.iconContainerOpacity ?? 1) > 0 ? `0 4px 12px rgba(15, 23, 42, ${0.12 * parseFloat(visuals.iconContainerOpacity)})` : 'none',
+                                          backgroundColor: hexToRgba('#ffffff', parseFloat(visuals.iconContainerOpacity ?? 0.95)),
+                                          border: `2px solid ${hexToRgba(middleColor, parseFloat(visuals.iconContainerOpacity ?? 0.95))}`,
+                                          borderRadius: '9999px',
+                                          boxShadow: (isExportingImage || parseFloat(visuals.iconContainerOpacity ?? 1) <= 0) ? 'none' : `0 4px 12px rgba(15, 23, 42, 0.12)`,
                                         }}
                                         onClick={() => { setSelectedLabelForIcon('_global_'); setSelectedIconName(config.globalIcon || 'Circle'); setShowIconModal(true); }}>
-                                        <DynamicIcon name={config.globalIcon || 'Circle'} size={Math.max(10, visuals.iconSize * (visuals.chartHeight / 580))} style={{ color: middleColor, opacity: visuals.iconOpacity }} />
+                                        <DynamicIcon name={config.globalIcon || 'Circle'} size={Math.max(10, visuals.iconSize * (visuals.chartHeight / 580))} style={{ color: visuals.iconColor || middleColor, opacity: visuals.iconOpacity }} />
                                       </motion.button>
                                     </div>
                                   );
@@ -2455,14 +2976,14 @@ const App = () => {
                                       }}>
                                       <motion.button
                                         whileHover={{ scale: 1.15, rotate: 5 }}
-                                        className="flex items-center justify-center transition-all"
+                                        className="flex items-center justify-center transition-all animate-fadeIn font-sans"
                                         style={{
                                           width: Math.max(20, visuals.iconContainerSize * (visuals.chartHeight / 580)),
                                           height: Math.max(20, visuals.iconContainerSize * (visuals.chartHeight / 580)),
-                                          backgroundColor: parseFloat(visuals.iconContainerOpacity ?? 1) > 0 ? `rgba(255, 255, 255, ${visuals.iconContainerOpacity})` : 'transparent',
-                                          border: parseFloat(visuals.iconContainerOpacity ?? 1) > 0 ? `2px solid ${hexToRgba(catColor, parseFloat(visuals.iconContainerOpacity))}` : 'none',
-                                          borderRadius: '55px',
-                                          boxShadow: parseFloat(visuals.iconContainerOpacity ?? 1) > 0 ? `0 4px 12px rgba(15, 23, 42, ${0.12 * parseFloat(visuals.iconContainerOpacity)})` : 'none',
+                                          backgroundColor: hexToRgba('#ffffff', parseFloat(visuals.iconContainerOpacity ?? 0.95)),
+                                          border: `2px solid ${hexToRgba(catColor, parseFloat(visuals.iconContainerOpacity ?? 0.95))}`,
+                                          borderRadius: '9999px',
+                                          boxShadow: (isExportingImage || parseFloat(visuals.iconContainerOpacity ?? 1) <= 0) ? 'none' : `0 4px 12px rgba(15, 23, 42, 0.12)`,
                                         }}
                                         onClick={() => {
                                           if (config.iconMode === 'unified') {
@@ -2474,7 +2995,7 @@ const App = () => {
                                           }
                                           setShowIconModal(true);
                                         }}>
-                                        <DynamicIcon name={iconName} size={Math.max(10, visuals.iconSize * (visuals.chartHeight / 580))} style={{ color: catColor, opacity: visuals.iconOpacity }} />
+                                        <DynamicIcon name={iconName} size={Math.max(10, visuals.iconSize * (visuals.chartHeight / 580))} style={{ color: visuals.iconColor || catColor, opacity: visuals.iconOpacity }} />
                                       </motion.button>
                                     </div>
                                   );
@@ -2522,12 +3043,14 @@ const App = () => {
 
           {data.length > 0 && (
             <div className="animate-in slide-in-from-bottom-6 duration-1000">
-              <MetricsGrid metrics={[
+              <Suspense fallback={<SkeletonLoader />}>
+                <MetricsGrid metrics={[
                 { label: 'Ingested Samples', value: aggregatedResults ? `${aggregatedResults.filteredCount.toLocaleString()} / ${data.length.toLocaleString()}` : data.length.toLocaleString(), icon: 'Table2', color: 'indigo' },
                 { label: 'Analysis Vector', value: config.yAxis, icon: 'Target', color: 'emerald' },
                 { label: 'Compute Engine', value: config.aggFunc.toUpperCase(), icon: 'Cpu', color: 'amber' },
                 { label: 'Summation Aggregate', value: config.showPercentage ? '100%' : (aggregatedResults?.rawTotal || 0).toLocaleString(), icon: 'BarChart3', color: 'rose' }
               ]} />
+              </Suspense>
             </div>
           )}
         </div>
@@ -2552,8 +3075,10 @@ const App = () => {
           </div>
           <div className="space-y-3">
             <div>
-              <label className="text-[9px] font-black text-slate-500 uppercase">Rename Label</label>
+              <label htmlFor="rename-label-input" className="text-[9px] font-black text-slate-500 uppercase">Rename Label</label>
               <input
+                id="rename-label-input"
+                name="rename-label-input"
                 type="text"
                 value={legendAliases[editingLegend.originalLabel] || editingLegend.originalLabel}
                 onChange={(e) => {
@@ -2704,8 +3229,9 @@ const App = () => {
                   type="text"
                   placeholder="Query library tags (e.g. Health, Cash, hum:Food)..."
                   className="w-full pl-12 pr-28 py-3.5 border border-slate-100 bg-slate-50 rounded-2xl outline-none focus:border-indigo-500/20 focus:ring-4 focus:ring-indigo-500/5 transition-all text-xs font-bold text-slate-700"
-                  value={selectedIconName.startsWith('data:') ? '' : selectedIconName}
+                  value={iconSearchInput}
                   onChange={(e) => {
+                    setIconSearchInput(e.target.value);
                     setSelectedIconName(e.target.value);
                     setIconUploadError('');
                   }}
@@ -2835,10 +3361,12 @@ const App = () => {
               <div className="space-y-4">
                 {/* Question Label Edit Text */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 block uppercase tracking-wide">
+                  <label htmlFor="question-title-input" className="text-[10px] font-black text-slate-400 block uppercase tracking-wide">
                     Question Title
                   </label>
                   <input
+                    id="question-title-input"
+                    name="question-title-input"
                     type="text"
                     value={editingTitle}
                     onChange={(e) => setEditingTitle(e.target.value)}
@@ -2849,11 +3377,13 @@ const App = () => {
 
                 {/* Column Type Select */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 block uppercase tracking-wide">
+                  <label htmlFor="question-type-select" className="text-[10px] font-black text-slate-400 block uppercase tracking-wide">
                     Question Data Type
                   </label>
                   <div className="relative">
                     <select
+                      id="question-type-select"
+                      name="question-type-select"
                       value={editingType}
                       onChange={(e) => setEditingType(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl text-xs font-semibold outline-none focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all appearance-none cursor-pointer text-slate-800 font-sans"
@@ -2897,78 +3427,97 @@ const App = () => {
 
       <AnimatePresence>
         {showGallery && (
-          <ChartGallery
-            visible={showGallery}
-            onClose={() => setShowGallery(false)}
-            data={data}
-            columns={columns}
-            columnTypes={columnTypes}
-            uniqueChoicesMap={uniqueChoicesMap}
-            selectedProject={selectedProject}
-            legendAliases={legendAliases}
-            columnAliases={columnAliases}
-            visuals={visuals}
-            globalGroupBy={config.groupBy}
-            getCategoryIconWithPreference={getCategoryIconWithPreference}
-            customIcons={customIcons}
-            onApplyToMainView={(cardConfig) => {
-              setConfig(prev => ({
-                ...prev,
-                xAxis: cardConfig.xAxis,
-                yAxis: cardConfig.yAxis,
-                groupBy: cardConfig.groupBy,
-                aggFunc: cardConfig.aggFunc,
-                chartType: cardConfig.chartType,
-                chartTitle: cardConfig.cardTitle,
-                showPercentage: cardConfig.showPercentage,
-                iconMode: cardConfig.iconMode,
-                globalIcon: cardConfig.globalIcon,
-                showTrendline: cardConfig.showTrendline,
-                showRawPath: cardConfig.showRawPath,
-              }));
-              setVisuals(prev => ({
-                ...prev,
-                primaryColor: cardConfig.primaryColor,
-                secondaryColor: cardConfig.secondaryColor,
-                tertiaryColor: cardConfig.tertiaryColor,
-                quaternaryColor: cardConfig.quaternaryColor,
-                showDataLabels: cardConfig.showDataLabels,
-                showLegend: cardConfig.showLegend,
-                grid: cardConfig.gridLines,
-                showIcons: cardConfig.showIcons,
-                borderWidth: cardConfig.borderWidth,
-                opacity: cardConfig.opacity,
-                tension: cardConfig.tension,
-                shadow: cardConfig.shadow,
-                fill: cardConfig.fill,
-                cutout: cardConfig.cutout,
-                scatterPointRadius: cardConfig.scatterPointRadius,
-                comboLineWidth: cardConfig.comboLineWidth,
-                iconSize: cardConfig.iconSize,
-                iconContainerSize: cardConfig.iconContainerSize,
-                iconContainerOpacity: cardConfig.iconContainerOpacity,
-                iconOpacity: cardConfig.iconOpacity,
-                iconOffset: cardConfig.iconOffset,
-                legendFontSize: cardConfig.legendFontSize,
-                legendSpacing: cardConfig.legendSpacing,
-                legendWidth: cardConfig.legendWidth,
-                legendPosition: cardConfig.legendPosition,
-                dataLabelColor: cardConfig.dataLabelColor,
-                dataLabelPosition: cardConfig.dataLabelPosition,
-                dataLabelFontSize: cardConfig.dataLabelFontSize,
-                xAxisFontSize: cardConfig.xAxisFontSize,
-                xAxisTitleFontSize: cardConfig.xAxisTitleFontSize,
-                yAxisFontSize: cardConfig.yAxisFontSize,
-                yAxisTitleFontSize: cardConfig.yAxisTitleFontSize,
-                chartOrientation: cardConfig.chartOrientation,
-                showAxisTicks: cardConfig.showAxisTicks,
-                showXAxisLabel: cardConfig.showXAxisLabel,
-                showYAxisLabel: cardConfig.showYAxisLabel,
-                tooltipMode: cardConfig.tooltipMode,
-              }));
-              setShowGallery(false);
-            }}
-          />
+          <Suspense fallback={
+            <div className="fixed inset-0 z-[10000] bg-slate-100 overflow-y-auto p-8">
+              <SkeletonLoader />
+            </div>
+          }>
+            <ChartGallery
+              visible={showGallery}
+              onClose={() => setShowGallery(false)}
+              data={data}
+              columns={columns}
+              columnTypes={columnTypes}
+              uniqueChoicesMap={uniqueChoicesMap}
+              selectedProject={selectedProject}
+              legendAliases={legendAliases}
+              columnAliases={columnAliases}
+              visuals={visuals}
+              config={config}
+              globalGroupBy={config.groupBy}
+              getCategoryIconWithPreference={getCategoryIconWithPreference}
+              customIcons={customIcons}
+              exportScale={exportScale}
+              setExportScale={setExportScale}
+              exportTransparent={exportTransparent}
+              setExportTransparent={setExportTransparent}
+              exportAspectRatio={exportAspectRatio}
+              setExportAspectRatio={setExportAspectRatio}
+              exportWatermark={exportWatermark}
+              setExportWatermark={setExportWatermark}
+              exportCustomTitle={exportCustomTitle}
+              setExportCustomTitle={setExportCustomTitle}
+              exportTimestamp={exportTimestamp}
+              setExportTimestamp={setExportTimestamp}
+              onApplyToMainView={(cardConfig) => {
+                setConfig(prev => ({
+                  ...prev,
+                  xAxis: cardConfig.xAxis,
+                  yAxis: cardConfig.yAxis,
+                  groupBy: cardConfig.groupBy,
+                  aggFunc: cardConfig.aggFunc,
+                  chartType: cardConfig.chartType,
+                  chartTitle: cardConfig.cardTitle,
+                  showPercentage: cardConfig.showPercentage,
+                  iconMode: cardConfig.iconMode,
+                  globalIcon: cardConfig.globalIcon,
+                  showTrendline: cardConfig.showTrendline,
+                  showRawPath: cardConfig.showRawPath,
+                }));
+                setVisuals(prev => ({
+                  ...prev,
+                  primaryColor: cardConfig.primaryColor,
+                  secondaryColor: cardConfig.secondaryColor,
+                  tertiaryColor: cardConfig.tertiaryColor,
+                  quaternaryColor: cardConfig.quaternaryColor,
+                  showDataLabels: cardConfig.showDataLabels,
+                  showLegend: cardConfig.showLegend,
+                  grid: cardConfig.gridLines,
+                  showIcons: cardConfig.showIcons,
+                  borderWidth: cardConfig.borderWidth,
+                  opacity: cardConfig.opacity,
+                  tension: cardConfig.tension,
+                  shadow: cardConfig.shadow,
+                  fill: cardConfig.fill,
+                  cutout: cardConfig.cutout,
+                  scatterPointRadius: cardConfig.scatterPointRadius,
+                  comboLineWidth: cardConfig.comboLineWidth,
+                  iconSize: cardConfig.iconSize,
+                  iconContainerSize: cardConfig.iconContainerSize,
+                  iconContainerOpacity: cardConfig.iconContainerOpacity,
+                  iconOpacity: cardConfig.iconOpacity,
+                  iconOffset: cardConfig.iconOffset,
+                  legendFontSize: cardConfig.legendFontSize,
+                  legendSpacing: cardConfig.legendSpacing,
+                  legendWidth: cardConfig.legendWidth,
+                  legendPosition: cardConfig.legendPosition,
+                  dataLabelColor: cardConfig.dataLabelColor,
+                  dataLabelPosition: cardConfig.dataLabelPosition,
+                  dataLabelFontSize: cardConfig.dataLabelFontSize,
+                  xAxisFontSize: cardConfig.xAxisFontSize,
+                  xAxisTitleFontSize: cardConfig.xAxisTitleFontSize,
+                  yAxisFontSize: cardConfig.yAxisFontSize,
+                  yAxisTitleFontSize: cardConfig.yAxisTitleFontSize,
+                  chartOrientation: cardConfig.chartOrientation,
+                  showAxisTicks: cardConfig.showAxisTicks,
+                  showXAxisLabel: cardConfig.showXAxisLabel,
+                  showYAxisLabel: cardConfig.showYAxisLabel,
+                  tooltipMode: cardConfig.tooltipMode,
+                }));
+                setShowGallery(false);
+              }}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
     </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, memo } from 'react';
 import { getDesignSettings } from '../services/SettingsService';
 
 // Brand colors: Place your project's brand identity colors here for subsequent customization.
@@ -9,7 +9,7 @@ const brandColors = {
   muted: '#eef2ff'
 };
 
-export default function ChartEngine({ selectedProject, selectedDesign, onApplySettings, onFade }) {
+function ChartEngine({ selectedProject, selectedDesign, onApplySettings, onFade }) {
   const prevRef = useRef({ p: null, d: null });
 
   useEffect(() => {
@@ -40,3 +40,5 @@ export default function ChartEngine({ selectedProject, selectedDesign, onApplySe
 
   return null;
 }
+
+export default memo(ChartEngine);

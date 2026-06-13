@@ -1,6 +1,3 @@
-import ExcelJS from 'exceljs/dist/exceljs.min.js';
-import * as XLSX from 'xlsx';
-
 export const STORAGE_KEY = 'projectSettings';
 export const ACTIVE_SELECTION_KEY = 'meal_active_selection';
 export const CHART_CONFIG_KEY = 'meal_chart_config';
@@ -182,6 +179,8 @@ export function buildWorkbookRows(settings) {
 }
 
 export async function createProtectedWorkbook(settings, password) {
+  const ExcelJSModule = await import('exceljs/dist/exceljs.min.js');
+  const ExcelJS = ExcelJSModule && ExcelJSModule.default ? ExcelJSModule.default : ExcelJSModule;
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Settings');
 
@@ -290,9 +289,27 @@ export async function importSettingsFile(file, password = DEFAULT_PASSWORD) {
   }
 
   const arrayBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
-  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: false });
+  const ExcelJSModule = await import('exceljs/dist/exceljs.min.js');
+  const ExcelJS = ExcelJSModule && ExcelJSModule.default ? ExcelJSModule.default : ExcelJSModule;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(arrayBuffer);
+  
+  const firstSheet = workbook.worksheets[0];
+  const rows = [];
+  firstSheet.eachRow((row) => {
+    const rowData = [];
+    for (let i = 1; i <= 5; i++) {
+      let val = row.getCell(i).value;
+      if (val !== null && typeof val === 'object') {
+         if (val.richText) val = val.richText.map(rt => rt.text).join('');
+         else if (val.text) val = val.text;
+         else if (val.result !== undefined) val = val.result;
+         else val = val instanceof Date ? val.toISOString() : String(val);
+      }
+      rowData.push(val ?? '');
+    }
+    rows.push(rowData);
+  });
 
   if (!rows.length || !validateImportHeaders(rows[0])) {
     throw new Error('Invalid Excel format. Expected headers: Project Name, Design Name, Setting Key, Value, Description.');

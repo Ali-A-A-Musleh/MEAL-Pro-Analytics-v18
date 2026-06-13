@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import SafeIcon from '../../SafeIcon';
 
-const DataManagement = ({ fileName, sheetNames, selectedSheet, onUpload, onSelectSheet }) => {
+const DataManagement = ({ fileName, sheetNames, selectedSheet, onUpload, onSelectSheet, isMemoryOnly }) => {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragOver = (e) => {
@@ -51,10 +51,31 @@ const DataManagement = ({ fileName, sheetNames, selectedSheet, onUpload, onSelec
         />
       </div>
 
+      {isMemoryOnly && (
+        <div className="bg-amber-50/70 border border-amber-200/50 rounded-3xl p-4 space-y-2 animate-fadeIn relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-150/20 rounded-full blur-xl pointer-events-none" />
+          <div className="flex items-center gap-2 relative z-10">
+            <div className="p-1.5 bg-amber-100 text-amber-700 rounded-xl">
+              <SafeIcon name="Cpu" size={14} className="animate-pulse" />
+            </div>
+            <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider font-sans leading-none">
+              In-Memory Profile Active
+            </span>
+          </div>
+          <p className="text-[10px] text-amber-850 leading-relaxed font-sans font-semibold pr-1 relative z-10">
+            Your dataset is too large for browsers' LocalStorage. To maintain high-speed responsiveness, it is kept secure and active in-memory.
+          </p>
+        </div>
+      )}
+
+
+
       {sheetNames.length > 1 && (
         <div className="space-y-2">
-          <label className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Please Select the Sheet</label>
+          <label htmlFor="sheet-select" className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Please Select the Sheet</label>
           <select
+            id="sheet-select"
+            name="sheet-select"
             value={selectedSheet}
             onChange={(e) => onSelectSheet(e.target.value)}
             className="w-full p-3 bg-white border border-slate-100 rounded-2xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-indigo-100 transition-all"

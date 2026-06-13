@@ -42,13 +42,13 @@ const SafeIcon = ({ name, size = 16, className = '', style = {} }) => {
   const normalized = normalizeIconName(name);
   if (normalized.type === 'lucide') {
     const IconComponent = Icons[normalized.name] || Icons['Circle'];
-    return <IconComponent size={size} className={className} style={style} />;
+    return <IconComponent size={size} className={className} style={style} color={style.color || undefined} />;
   } else if (normalized.type === 'iconify') {
-    return <Icon icon={normalized.name} width={size} height={size} className={className} style={style} />;
+    return <Icon icon={normalized.name} width={size} height={size} className={className} style={{ color: style.color, ...style }} />;
   } else if (normalized.type === 'hum') {
-    return <i className={`${normalized.name} ${className}`} style={{ fontSize: size, ...style }} />;
+    return <i className={`${normalized.name} ${className}`} style={{ fontSize: size, color: style.color, ...style }} />;
   }
-  return <Icons.Circle size={size} className={className} style={style} />;
+  return <Icons.Circle size={size} className={className} style={style} color={style.color || undefined} />;
 };
 
 export default SafeIcon;

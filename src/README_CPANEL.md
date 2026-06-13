@@ -13,27 +13,32 @@ Since this application is built using **React + Vite** as a Single Page Applicat
 
 2. **Upload to cPanel:**
    - Open **File Manager** in your cPanel dashboard.
-   - Navigate to your website root folder (usually `public_html`).
-   - Upload the entire contents of the `dist` folder into `public_html`.
+   - Navigate to your target deployment folder: `public_html/tools/pro-analytics-studio/`
+   - **Delete all old files** in the target folder first.
+   - Upload the entire contents of the `dist` folder into the target folder.
+   - **IMPORTANT:** Make sure you upload the NEW build files, not old ones. The CSS/JS filenames change with each build (they have hash suffixes like `index-XXXX.css`).
 
 3. **Routing setup:**
    - A `.htaccess` file has already been added into the project's `public` folder.
    - When you build the project, this file is automatically copied into the `dist` folder.
    - This file ensures all routes work correctly and prevents 404 errors when refreshing the page or navigating to subpaths.
+   - The `.htaccess` is pre-configured for the path `/tools/pro-analytics-studio/`.
 
-## Included `.htaccess` content:
+## Included `.htaccess` routing rules:
 ```apache
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteBase /
+  RewriteBase /tools/pro-analytics-studio/
   RewriteRule ^index\.html$ - [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteCond %{REQUEST_FILENAME} !-l
-  RewriteRule . /index.html [L]
+  RewriteRule . /tools/pro-analytics-studio/index.html [L]
 </IfModule>
 ```
 
 ## Important Notes:
 - Make sure your **Node.js** version is appropriate (for example, version 18 or newer) if you are building directly on the server using the cPanel Terminal.
-- If you are deploying the site to a subfolder (for example: `yourdomain.com/analytics/`) instead of the root domain, you will need to update the `base` value in `vite.config.js` to `base: '/analytics/'`.
+- The `base` in `vite.config.js` is set to `'./'` (relative paths), which works correctly for subfolder deployments.
+- **Always delete old files before uploading new ones** to avoid stale CSS/JS files causing style issues.
+
