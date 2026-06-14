@@ -104,7 +104,7 @@ const hexToRgba = (hex, alpha) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-// Independent Lazy-loading observer hook with callback-ref to prevent stale ref bounds
+// Independent Lazy-loading observer hook with recycling to clear memory
 const useLazyLoad = () => {
   const [isIntersecting, setIntersecting] = useState(false);
   const observerRef = useRef(null);
@@ -112,18 +112,19 @@ const useLazyLoad = () => {
   const refCallback = useCallback((node) => {
     if (observerRef.current) {
       observerRef.current.disconnect();
+      observerRef.current = null;
     }
-    if (typeof window.IntersectionObserver === 'undefined') {
-      setIntersecting(true);
-      return;
-    }
+
     if (node) {
+      if (typeof window.IntersectionObserver === 'undefined') {
+        setIntersecting(true);
+        return;
+      }
+
       const observer = new window.IntersectionObserver(([entry]) => {
-        if (entry.isIntersecting) {
-          setIntersecting(true);
-          observer.disconnect();
-        }
-      }, { rootMargin: '300px' });
+        setIntersecting(entry.isIntersecting);
+      }, { rootMargin: '600px' });
+
       observer.observe(node);
       observerRef.current = observer;
     }
@@ -156,12 +157,18 @@ const captureCardCanvas = async (cardElement, withIcons = true, exportOpts = {})
   const originalFlex = cardElement.style.flex;
   const originalBorderRadius = cardElement.style.borderRadius;
   const originalBoxShadow = cardElement.style.boxShadow;
+  const originalBorder = cardElement.style.border;
+  const originalBorderWidth = cardElement.style.borderWidth;
+  const originalBorderColor = cardElement.style.borderColor;
 
   try {
     cardElement.style.padding = '44px';
     cardElement.style.backgroundColor = isTransparent ? 'transparent' : '#ffffff';
     cardElement.style.borderRadius = '0px';
     cardElement.style.boxShadow = 'none';
+    cardElement.style.border = 'none';
+    cardElement.style.borderWidth = '0px';
+    cardElement.style.borderColor = 'transparent';
 
     // Apply high-resolution target dimensions to allow rich font rendering and prevent crowding
     const widthVal = 1200; 
@@ -208,6 +215,9 @@ const captureCardCanvas = async (cardElement, withIcons = true, exportOpts = {})
           clonedCard.style.backgroundColor = isTransparent ? 'transparent' : '#ffffff';
           clonedCard.style.borderRadius = '0px';
           clonedCard.style.boxShadow = 'none';
+          clonedCard.style.border = 'none';
+          clonedCard.style.borderWidth = '0px';
+          clonedCard.style.borderColor = 'transparent';
 
           // Apply Custom Aspect Ratios inside cloning area
           clonedCard.style.width = `${widthVal}px`;
@@ -295,6 +305,9 @@ const captureCardCanvas = async (cardElement, withIcons = true, exportOpts = {})
     cardElement.style.maxWidth = originalMaxW;
     cardElement.style.maxHeight = originalMaxH;
     cardElement.style.flex = originalFlex;
+    cardElement.style.border = originalBorder;
+    cardElement.style.borderWidth = originalBorderWidth;
+    cardElement.style.borderColor = originalBorderColor;
   }
 };
 
@@ -456,6 +469,8 @@ const ChartGallery = ({
   const [showExportSettings, setShowExportSettings] = useState(false);
   const [visibleLimit, setVisibleLimit] = useState(12);
 
+  const loadMoreRef = useRef(null);
+
   // Reset visible limit on search query or filter change to ensure we render instantly
   useEffect(() => {
     setVisibleLimit(12);
@@ -581,12 +596,14 @@ const ChartGallery = ({
   // Pre-calculate smart default chart types of all columns for fast type category filtering
   const colConfigs = useMemo(() => {
     const configs = {};
+    const firstTextOrSelectMultiple = columns.find(c => columnTypes[c] === 'text' || columnTypes[c] === 'select_multiple');
+
     columns.forEach(col => {
       const colType = columnTypes[col] || 'text';
       const currentGroupBy = globalGroupBy || '';
       
       const xCol = colType === 'number'
-        ? (columns.find(c => columnTypes[c] === 'text' || columnTypes[c] === 'select_multiple') || col)
+        ? (firstTextOrSelectMultiple || col)
         : col;
       
       const xType = columnTypes[xCol] || 'text';
@@ -651,6 +668,20 @@ const ChartGallery = ({
     return filtered;
   }, [columns, searchQuery, columnAliases, showSelectedOnly, selectedCols, chartTypeFilter, colConfigs]);
 
+  // Automatic Infinite Scroll Observer
+  useEffect(() => {
+    if (!loadMoreRef.current || isExporting) return;
+    
+    const observer = new window.IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setVisibleLimit(prev => prev + 12);
+      }
+    }, { rootMargin: '300px' });
+    
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [searchQuery, chartTypeFilter, showSelectedOnly, isExporting, visibleLimit, searchableCols.length]);
+
   const toggleSelectAll = () => {
     // Check if all currently visible columns are already selected
     const allVisibleSelected = searchableCols.every(col => selectedCols.has(col));
@@ -692,7 +723,7 @@ const ChartGallery = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-900/80 backdrop-blur-xl p-4 sm:p-6 md:p-8 lg:pl-[450px] lg:pr-8 flex flex-col font-sans text-slate-800"
+        className="fixed inset-y-0 right-0 left-0 lg:left-[370px] z-[9999] overflow-y-auto bg-slate-900/80 backdrop-blur-xl p-4 sm:p-6 md:p-8 flex flex-col font-sans text-slate-800"
       >
         {/* TOP GLOW OVERLAY BACKGROUND */}
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none" />
@@ -704,7 +735,7 @@ const ChartGallery = ({
           animate={{ y: 0, scale: 1 }}
           exit={{ y: '30%', scale: 0.95 }}
           transition={{ type: 'spring', damping: 18, stiffness: 120 }}
-          className="w-full max-w-4xl mx-auto lg:max-w-[calc(100vw-32rem)] flex flex-col bg-white rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(15,23,42,0.6)] border border-slate-100 overflow-hidden flex-1 max-h-[92vh] relative"
+          className="w-full max-w-7xl mx-auto flex flex-col bg-white rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(15,23,42,0.6)] border border-slate-100 overflow-hidden flex-1 max-h-[92vh] relative"
         >
           {/* HEADER NAV */}
           <div className="p-5 md:p-6 border-b border-slate-100 bg-slate-50/50 backdrop-blur-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-55 shrink-0">
@@ -726,18 +757,33 @@ const ChartGallery = ({
             </div>
 
             {/* HEADER INTERACTIVE BUTTONS */}
-            <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto relative">
               {/* Report Export Button */}
               {columns.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleExportFullReport}
-                  disabled={isProcessing}
-                  className="px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-[11px] font-black rounded-xl shadow-lg shadow-indigo-200/40 hover:shadow-xl active:scale-95 transition-all duration-200 cursor-pointer flex items-center gap-1.5 shrink-0 uppercase tracking-wider"
-                >
-                  <SafeIcon name="FileSpreadsheet" size={14} className="shrink-0" />
-                  <span>Export Report (ZIP)</span>
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleExportFullReport}
+                    disabled={isProcessing}
+                    className="px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-[11px] font-black rounded-xl shadow-lg shadow-indigo-200/40 hover:shadow-xl active:scale-95 transition-all duration-200 cursor-pointer flex items-center gap-1.5 shrink-0 uppercase tracking-wider"
+                  >
+                    <SafeIcon name="FileSpreadsheet" size={14} className="shrink-0" />
+                    <span>Export Report (ZIP)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowExportSettings(!showExportSettings)}
+                    title="Export Configurations"
+                    className={`p-2.5 rounded-xl border transition-all active:scale-95 cursor-pointer shrink-0 ${
+                      showExportSettings
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100'
+                        : 'bg-white border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                    }`}
+                  >
+                    <SafeIcon name="Sliders" size={15} />
+                  </button>
+                </div>
               )}
 
               {/* Full Browse Tab Button */}
@@ -760,6 +806,152 @@ const ChartGallery = ({
               </button>
             </div>
           </div>
+
+          <AnimatePresence>
+            {showExportSettings && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.3, ease: "easeInOut" }}
+                className="overflow-y-auto max-h-[280px] lg:max-h-none border-b border-slate-200 bg-indigo-50/30 shrink-0 no-scrollbar"
+              >
+                <div className="p-5 md:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-left font-sans border-t border-slate-200/50">
+                  {/* Column 1: Resolution Scale */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-slate-700">
+                      <SafeIcon name="Sliders" size={13} className="text-indigo-600 animate-pulse" />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Resolution Scale</span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold leading-normal">SUPPORT HIGH RESOLUTION SCHEMES</p>
+                    <div className="grid grid-cols-2 gap-1.5 mt-2 bg-white/75 p-1 rounded-xl border border-slate-200/50 shadow-inner">
+                      {[
+                        { l: '1x Standard', v: 1 },
+                        { l: '2x HD Visual', v: 2 },
+                        { l: '4x Ultra 4K', v: 4 },
+                        { l: '5x Print Qual', v: 5 }
+                      ].map((opt) => (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => setExportScale(opt.v)}
+                          className={`py-2 px-1 text-[9px] font-black rounded-lg transition-all cursor-pointer text-center ${
+                            exportScale === opt.v
+                              ? 'bg-indigo-600 text-white shadow-md'
+                              : 'text-slate-500 hover:text-indigo-600 hover:bg-white'
+                          }`}
+                        >
+                          {opt.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Column 2: Aspect Ratio Presets */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-slate-700">
+                      <SafeIcon name="Maximize2" size={12} className="text-indigo-600" />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Aspect Ratio Preset</span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold leading-normal">CHALLENGE PROPORTIONAL ALIGNMENTS</p>
+                    <div className="grid grid-cols-2 gap-1.5 mt-2 bg-white/75 p-1 rounded-xl border border-slate-200/50 shadow-inner">
+                      {[
+                        { l: 'Free Scale', v: 'free' },
+                        { l: '16:9 Cinema', v: '16_9' },
+                        { l: '4:3 Standard', v: '4_3' },
+                        { l: '1:1 Square', v: '1_1' }
+                      ].map((opt) => (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => setExportAspectRatio(opt.v)}
+                          className={`py-2 px-1 text-[9px] font-black rounded-lg transition-all cursor-pointer text-center ${
+                            exportAspectRatio === opt.v
+                              ? 'bg-indigo-600 text-white shadow-md'
+                              : 'text-slate-500 hover:text-indigo-600 hover:bg-white'
+                          }`}
+                        >
+                          {opt.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Column 3: Alpha & Branding */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-slate-700">
+                      <SafeIcon name="Eye" size={13} className="text-indigo-600" />
+                      <span className="text-[10px] font-black uppercase tracking-wider">Transparencies & Watermarks</span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold leading-normal">CUSTOM BACKDROP INTEGRITY</p>
+                    <div className="flex flex-col gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setExportTransparent(!exportTransparent)}
+                        className={`p-2.5 rounded-xl border text-[9px] font-black flex items-center justify-between transition-all cursor-pointer ${
+                          exportTransparent
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <SafeIcon name={exportTransparent ? 'EyeOff' : 'Eye'} size={12} />
+                          Transparent Canvas
+                        </span>
+                        <span className="text-[7px] font-black uppercase opacity-80">{exportTransparent ? 'ACTIVE' : 'OFF'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setExportWatermark(!exportWatermark)}
+                        className={`p-2.5 rounded-xl border text-[9px] font-black flex items-center justify-between transition-all cursor-pointer ${
+                          exportWatermark
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <SafeIcon name="Stamp" size={12} />
+                          Watermark Overlay
+                        </span>
+                        <span className="text-[7px] font-black uppercase opacity-80">{exportWatermark ? 'ACTIVE' : 'OFF'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Column 4: Custom Headers */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-slate-700">
+                      <div className="flex items-center gap-1.5">
+                        <SafeIcon name="Type" size={13} className="text-indigo-600" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">Header Overlay Title</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setExportTimestamp(!exportTimestamp)}
+                        className={`text-[8px] font-extrabold flex items-center gap-1 uppercase tracking-widest px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                          exportTimestamp ? 'border-indigo-600 text-white bg-indigo-600 shadow-md' : 'border-slate-300 text-slate-500 bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <SafeIcon name="Clock" size={8} />
+                        <span>Timestamp</span>
+                      </button>
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold leading-normal">EMBED TIME & TITLE OVERLAYS</p>
+                    <div className="mt-2.5">
+                      <input
+                        type="text"
+                        value={exportCustomTitle}
+                        onChange={(e) => setExportCustomTitle(e.target.value)}
+                        placeholder="Enter custom title overlay"
+                        className="w-full px-3 py-2 bg-white text-[10px] font-bold border border-slate-200 rounded-xl outline-none focus:border-indigo-600 transition-all text-slate-800 placeholder-slate-400 shadow-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* SEARCH BOX, SELECTION, AND CHART TYPE FILTERS BAR */}
           <div className="px-6 py-3.5 border-b border-slate-100 bg-slate-50/40 flex flex-col gap-3 shrink-0">
@@ -888,7 +1080,11 @@ const ChartGallery = ({
 
                 {/* PROGRESSIVE LOADING TRIGGER SATELLITE */}
                 {!isExporting && searchableCols.length > visibleLimit && (
-                  <div className="mt-8 flex flex-col items-center justify-center gap-3 py-6 animate-fadeIn" id="load-more-container">
+                  <div
+                    ref={loadMoreRef}
+                    className="mt-8 flex flex-col items-center justify-center gap-3 py-6 animate-fadeIn"
+                    id="load-more-container"
+                  >
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
                       Showing {visibleLimit} of {searchableCols.length} columns analysis
                     </p>
@@ -938,9 +1134,37 @@ const ChartGallery = ({
   );
 };
 
+// Custom memoization comparator to bypass full sibling/typings re-computations unless actual props modify
+const arePropsEqual = (p, n) => {
+  return p.col === n.col &&
+         p.isSelected === n.isSelected &&
+         p.isExporting === n.isExporting &&
+         p.data === n.data &&
+         p.globalGroupBy === n.globalGroupBy &&
+         p.exportScale === n.exportScale &&
+         p.exportTransparent === n.exportTransparent &&
+         p.exportAspectRatio === n.exportAspectRatio &&
+         p.exportWatermark === n.exportWatermark &&
+         p.exportCustomTitle === n.exportCustomTitle &&
+         p.exportTimestamp === n.exportTimestamp &&
+         p.visuals?.primaryColor === n.visuals?.primaryColor &&
+         p.visuals?.secondaryColor === n.visuals?.secondaryColor &&
+         p.visuals?.tertiaryColor === n.visuals?.tertiaryColor &&
+         p.visuals?.quaternaryColor === n.visuals?.quaternaryColor &&
+         p.visuals?.colorMode === n.visuals?.colorMode &&
+         p.visuals?.chartType === n.visuals?.chartType &&
+         p.visuals?.showIcons === n.visuals?.showIcons &&
+         p.visuals?.globalIcon === n.visuals?.globalIcon &&
+         p.visuals?.iconColor === n.visuals?.iconColor &&
+         p.visuals?.iconMode === n.visuals?.iconMode &&
+         p.visuals?.tooltipMode === n.visuals?.tooltipMode &&
+         p.visuals?.numberFormat === n.visuals?.numberFormat;
+};
+
 // INDIVIDUAL CARD REPRESENTS THE ENTIRE SELF-CONTAINED CHART
-const GalleryCard = memo(({
+const ActiveGalleryCard = memo(({
   col,
+  elementRef,
   data,
   columns,
   columnTypes,
@@ -964,11 +1188,9 @@ const GalleryCard = memo(({
   exportCustomTitle = '',
   exportTimestamp = false,
 }) => {
-  const [ref, inView] = useLazyLoad();
-  const shouldRender = inView || isExporting;
+  const shouldRender = true;
   const [isSettingOpen, setIsSettingOpen] = useState(false);
   const cardRef = useRef(null);
-  const outerCardRef = useRef(null);
   const [isExportingCard, setIsExportingCard] = useState(false);
   const [activeTab, setActiveTab] = useState('data'); // 'data', 'styling', 'overlay'
 
@@ -1217,7 +1439,7 @@ const GalleryCard = memo(({
     );
 
     return { labels, rawDatasets, rawTotal, filteredCount, originalLabels: visibleLabels };
-  }, [inView, data, resolvedConfig.xAxis, resolvedConfig.yAxis, resolvedConfig.groupBy, resolvedConfig.aggFunc, columnTypes, uniqueChoicesMap, legendAliases]);
+  }, [shouldRender, data, resolvedConfig.xAxis, resolvedConfig.yAxis, resolvedConfig.groupBy, resolvedConfig.aggFunc, columnTypes, uniqueChoicesMap, legendAliases]);
 
   // Construct Chart.js datasets structures
   const chartJSData = useMemo(() => {
@@ -1520,14 +1742,20 @@ const GalleryCard = memo(({
 
   return (
     <div
-      ref={(el) => {
-        ref(el);
-        outerCardRef.current = el;
+      ref={(node) => {
+        if (elementRef) {
+          if (typeof elementRef === 'function') {
+            elementRef(node);
+          } else {
+            elementRef.current = node;
+          }
+        }
+        cardRef.current = node;
       }}
       data-gallery-card="true"
       data-col-name={col}
       data-card-title={resolvedConfig.cardTitle}
-      className="bg-white rounded-3xl border border-slate-100 shadow-[0_12px_40px_rgba(15,23,42,0.03)] hover:shadow-[0_20px_50px_rgba(99,102,241,0.08)] transition-all duration-300 overflow-hidden flex flex-col relative min-h-[320px] md:h-[440px] text-slate-800"
+      className="bg-white rounded-3xl shadow-[0_12px_40px_rgba(15,23,42,0.03)] hover:shadow-[0_20px_50px_rgba(99,102,241,0.08)] transition-all duration-300 overflow-hidden flex flex-col relative min-h-[320px] md:h-[440px] text-slate-800"
     >
       {/* SHIMMER PLACEHOLDER FOR LAZY LOADING */}
       {!shouldRender ? (
@@ -1539,7 +1767,7 @@ const GalleryCard = memo(({
       ) : (
         <>
           {/* CRISTAL HEADER CHIP */}
-          <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-3 shrink-0">
+          <div className="p-4 bg-slate-50/50 flex items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
               {/* Checkbox indicator */}
               <button
@@ -1551,10 +1779,7 @@ const GalleryCard = memo(({
                 <SafeIcon name="Check" size={12} className="stroke-[3]" />
               </button>
               <div className="flex-1 min-w-0">
-                <span className="text-[8px] font-black uppercase text-indigo-500 tracking-widest leading-none">
-                  {colType === 'number' ? 'Numerical Indicator' : 'Nominal / Text'}
-                </span>
-                <h2 className="text-[12.5px] font-extrabold text-slate-800 tracking-tight mt-0.5 truncate" title={resolvedConfig.cardTitle}>
+                <h2 className="text-[13px] font-extrabold text-slate-800 tracking-tight truncate" title={resolvedConfig.cardTitle}>
                   {resolvedConfig.cardTitle}
                 </h2>
               </div>
@@ -2322,5 +2547,30 @@ const GalleryCard = memo(({
     </div>
   );
 });
+
+// LIGHT STUB WRAPPER COMPONENT THAT INTERCEPTS RENDERING FOR GIGANTIC PERFORMANCE LEAPS
+const GalleryCard = memo(({ col, ...props }) => {
+  const [ref, inView] = useLazyLoad();
+  const shouldRender = inView || props.isExporting;
+
+  if (!shouldRender) {
+    return (
+      <div
+        ref={ref}
+        data-gallery-card="true"
+        data-col-name={col}
+        className="bg-white rounded-3xl shadow-[0_12px_40px_rgba(15,23,42,0.03)] hover:shadow-[0_20px_50px_rgba(99,102,241,0.08)] transition-all duration-300 overflow-hidden flex flex-col relative min-h-[320px] md:h-[440px] text-slate-800"
+      >
+        <div className="flex-1 flex flex-col items-center justify-center p-8 animate-pulse bg-slate-50/70 h-full w-full rounded-2xl">
+          <div className="w-12 h-12 bg-slate-200 rounded-2xl mb-4 animate-bounce" />
+          <div className="h-4 w-3/4 bg-slate-200 rounded-lg mb-2" />
+          <div className="h-3 w-1/2 bg-slate-200 rounded-lg" />
+        </div>
+      </div>
+    );
+  }
+
+  return <ActiveGalleryCard elementRef={ref} col={col} {...props} />;
+}, arePropsEqual);
 
 export default memo(ChartGallery);

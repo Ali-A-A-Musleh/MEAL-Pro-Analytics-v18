@@ -94,20 +94,20 @@ const ChartHeader = ({ chartType, onSetChartType, onToggleSidebar }) => {
         </button>
         <div>
           <h2 className="text-2xl lg:text-3.5xl font-black text-slate-900 tracking-tight">
-            MEAL Center Pro Analytics Studio
+            MEAL Pro Analytics Studio
           </h2>
           <p className="text-slate-500 text-xs lg:text-sm font-medium mt-1">
-             Interactive data visualization tool for monitoring, evaluation, and research
+            Dynamic analytics engine, smart styling parameters, and live multi-type charts
           </p>
         </div>
       </div>
 
       {/* DROPDOWNS BAR */}
-      <div className="flex items-center gap-3 bg-slate-50/50 p-2 rounded-3xl border border-slate-200/50 backdrop-blur-xl shadow-md w-full xl:w-auto overflow-visible select-none justify-end">
+      <div className="flex flex-wrap items-center gap-3 bg-slate-50/50 p-2 rounded-3xl border border-slate-200/50 backdrop-blur-xl shadow-md w-full xl:w-auto overflow-visible select-none justify-end">
         
         {/* Selected Indicator Pill */}
         <div className="hidden lg:flex items-center gap-2.5 px-4 py-2 bg-indigo-50/70 border border-indigo-100 rounded-2xl shrink-0">
-          <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
+          <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
             <SafeIcon name={currentChartItem.icon} size={14} />
           </div>
           <div className="flex flex-col">
@@ -117,7 +117,7 @@ const ChartHeader = ({ chartType, onSetChartType, onToggleSidebar }) => {
         </div>
 
          {/* Category Controls Selector */}
-        <div className="flex lg:overflow-visible overflow-x-auto no-scrollbar items-center gap-2 w-full sm:w-auto relative py-1" onMouseLeave={handleMouseLeave}>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto relative" onMouseLeave={handleMouseLeave}>
           {categories.map((cat) => {
             const hasActiveUnder = cat.items.some(it => it.id === chartType);
             const isOpen = activeCategory === cat.id;
@@ -129,21 +129,21 @@ const ChartHeader = ({ chartType, onSetChartType, onToggleSidebar }) => {
             return (
               <div
                 key={cat.id}
-                className="static lg:relative shrink-0"
+                className="static lg:relative"
                 onMouseEnter={() => handleMouseEnter(cat.id)}
               >
                 <button
                   type="button"
                   onClick={() => toggleCategory(cat.id)}
                   title={cat.title}
-                  className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl text-[11px] font-black tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 sm:gap-2 border shadow-sm ${
+                  className={`px-2.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl text-[11px] font-black tracking-tight transition-all duration-200 cursor-pointer flex items-center gap-1.5 sm:gap-2 border shadow-sm ${
                     hasActiveUnder 
                       ? 'bg-gradient-to-r text-white border-transparent ' + cat.color + ' ' + cat.glow
                       : 'bg-white text-slate-700 border-slate-200 hover:border-slate-350 hover:bg-slate-50'
                   }`}
                 >
                   <SafeIcon name={cat.icon} size={13} className="shrink-0" />
-                  <span className="inline">{cat.title}</span>
+                  <span className="hidden lg:inline">{cat.title}</span>
                   <SafeIcon name="ChevronDown" size={11} className={`transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
 
@@ -154,7 +154,7 @@ const ChartHeader = ({ chartType, onSetChartType, onToggleSidebar }) => {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 8, scale: 0.96 }}
                       transition={{ duration: 0.15, ease: 'easeOut' }}
-                      className={`absolute left-2 right-2 ${positionClasses} top-full mt-2.5 lg:w-96 bg-white/95 rounded-[1.8rem] border border-slate-200/80 shadow-2xl p-2.5 z-[10005] backdrop-blur-2xl max-w-[min(100vw-1rem,24rem)] pointer-events-auto origin-top`}
+                      className={`absolute left-2 right-2 ${positionClasses} top-full mt-2.5 lg:w-96 bg-white/95 rounded-[1.8rem] border border-slate-200/80 shadow-2xl p-2.5 z-50 backdrop-blur-2xl origin-top`}
                     >
                       <div className="px-3.5 py-2.5 bg-slate-50 rounded-[1.2rem] border border-slate-100 mb-2">
                         <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none block">Category Layouts</span>

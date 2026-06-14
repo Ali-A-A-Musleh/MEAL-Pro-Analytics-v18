@@ -2140,7 +2140,7 @@ const App = () => {
         className={`sidebar-backdrop fixed inset-0 bg-black/50 z-[9999] lg:hidden ${sidebarOpen ? 'open' : ''}`}
         onClick={() => setSidebarOpen(false)}
       />
-      <aside className={`sidebar-mobile fixed inset-y-0 left-0 z-[10001] w-full max-w-[420px] overflow-y-auto bg-white shadow-2xl lg:static lg:translate-x-0 lg:w-[420px] lg:shadow-none ${sidebarOpen ? 'open' : ''}`}>
+      <aside className={`sidebar-mobile fixed inset-y-0 left-0 z-[10001] w-full max-w-[370px] overflow-y-auto bg-white shadow-2xl lg:static lg:translate-x-0 lg:w-[370px] lg:shadow-none ${sidebarOpen ? 'open' : ''}`}>
       {isBusy && (
         <div className="fixed inset-0 z-[20000] flex items-center justify-center bg-slate-950/30 backdrop-blur-sm pointer-events-auto">
           <div className="rounded-3xl bg-white/95 border border-slate-200 p-5 shadow-2xl text-slate-900 flex items-center gap-3 text-[11px] font-black uppercase tracking-[0.2em]">
@@ -2806,7 +2806,7 @@ const App = () => {
         />
       </Suspense>
 
-      <main className="flex-1 flex flex-col gap-4 lg:gap-6 p-2 sm:p-4 lg:p-8 relative overflow-x-hidden">
+      <main className="flex-1 flex flex-col gap-4 lg:gap-6 p-2 sm:p-4 lg:p-8 relative overflow-x-hidden overflow-y-auto lg:overflow-y-hidden">
         <Suspense fallback={null}>
           <ChartHeader
             chartType={config.chartType}
